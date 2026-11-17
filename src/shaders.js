@@ -328,16 +328,16 @@ void main() {
   vec3 side = -(camR*gx + camU*gy)*uWakeGain;
   side *= min(1.0, 0.3/max(length(side), 1e-5));
   float hw = hC*uWakeGain;
-  vec3 depth = camF*clamp(hw*1.8, -1.1, 1.1);
+  vec3 depth = camF*clamp(hw*3.6, -2.2, 2.2);
   pos += side + depth;
-  vWake = clamp(hw*1.2, -1.0, 1.0);
+  vWake = clamp(hw*2.4, -1.0, 1.0);
   float lift = clamp(length(vec2(gx, gy))*uWakeGain*1.2 + abs(hC)*uWakeGain*0.3, 0.0, 1.0);
   xglow += lift*0.6;
 
   float ang = (r.w*TAU + t*(0.25 + r.x*0.7)) * (1.0 - ord) + bump*(3.0 + 6.0*r.y) + lift*(0.8 + 1.2*r.y);
   vec3 axis = normalize(r.xyz*2.0 - 1.0 + 1e-3);
   mat3 R = rot(axis, ang);
-  float wk = clamp(length(vec2(gx, gy))*uWakeGain*2.5, 0.0, 1.0);
+  float wk = clamp(length(vec2(gx, gy))*uWakeGain*3.5, 0.0, 1.0);
   if (wk > 0.001) {
     vec3 sn = normalize(camF*-1.0 - (camR*gx + camU*gy)*uWakeGain*6.0);
     vec3 cF = -camF;
@@ -345,7 +345,7 @@ void main() {
     float tl = length(tax);
     if (tl > 1e-4) R = rot(tax/tl, asin(min(tl,1.0))*wk) * R;
   }
-  sz *= 1.0 + 0.15*clamp(hw*1.2, -1.0, 1.0);
+  sz *= 1.0 + 0.2*clamp(hw*2.4, -1.0, 1.0);
 
   float pulse = 0.5 + 0.5*sin(dot(pos, normalize(vec3(0.6,0.3,0.7)))*0.55 - t*1.6 + r.x*0.8);
   pulse = pow(pulse, 6.0);
@@ -437,8 +437,8 @@ void main() {
   if (uMirror > 0.5) lit *= 0.6 * exp(-abs(vWorld.y - uFloor)*0.16);
   float fog = exp(-max(dist - 10.0, 0.0)*0.045);
   vec3 fogCol = vec3(0.004, 0.006, 0.02);
-  lit *= 1.0 - 0.4*clamp(-vWake, 0.0, 1.0);
-  lit += bright * pow(max(dot(n, normalize(V + K)), 0.0), 24.0) * clamp(vWake, 0.0, 1.0) * 0.9;
+  lit *= 1.0 - 0.55*clamp(-vWake, 0.0, 1.0);
+  lit += bright * pow(max(dot(n, normalize(V + K)), 0.0), 24.0) * clamp(vWake, 0.0, 1.0) * 1.2;
   lit = mix(fogCol, lit, fog);
 
   gl_FragColor = vec4(lit, 1.0);
