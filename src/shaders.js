@@ -183,7 +183,7 @@ vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) 
     float tw = y*0.05*sin(t*0.3) + t*0.1;
     p = rotY(tw) * vec3(c.x, y, c.y);
     p.xz *= 1.0 + 0.3*sin(y*0.4 + t*0.5);
-    sz = 0.13; ord = 1.0;
+    sz = 0.12; ord = 1.0;
   } else if (id < 8.5) { // icosahedron wireframe
     int ne = int(mod(i, 30.0));
     int cnt = 0;
@@ -233,7 +233,7 @@ vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) 
     else p += (r.xyz - 0.5)*jit*2.0;
     p = rotY(t*0.18) * (rotX(0.5) * p);
     ord = 1.0;
-  } else if (id < 11.5) { // dense spiral galaxy: bulge, two log-spiral arms (~1 turn), faint haze
+  } else if (id < 11.5) { // dense spiral galaxy: bulge, three log-spiral arms (~1 turn), faint haze
     float u2 = fract(i*0.6180339)*0.93;
     float rad = -log(1.0 - u2)*3.6;
     float cls = r.w;
@@ -241,21 +241,21 @@ vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) 
     float yj = (fract(i*0.7548) - 0.5);
     float spin = t*0.12;
     if (cls < 0.2) {
-      float rb = -log(1.0 - fract(i*0.7548)*0.95)*1.5;
+      float rb = -log(1.0 - fract(i*0.7548)*0.95)*2.0;
       p = fib(i, uCount) * rb * vec3(1.0, 0.7, 1.0);
       p = rotY(spin*2.0) * p;
-      sz = 0.085;
+      sz = 0.1;
     } else if (cls < 0.68) {
       float rr = 1.3 + rad*0.95;
-      float arm = floor(r.z*2.0);
-      float th = arm*PI + 2.9*log(rr/1.3) + dd*(0.16 + 0.05*rr/(1.0 + rr*0.1)) + spin + 0.04*sin(t*0.4 - rr*0.5)*rr*0.1;
+      float arm = floor(r.z*3.0);
+      float th = arm*TAU/3.0 + 2.9*log(rr/1.3) + dd*(0.32 + 0.1*rr/(1.0 + rr*0.1)) + spin + 0.04*sin(t*0.4 - rr*0.5)*rr*0.1;
       p = vec3(cos(th)*rr, yj*(0.3*exp(-rr*0.15) + 0.05), sin(th)*rr);
-      sz = 0.13;
+      sz = 0.12;
     } else {
-      float rr = 0.6 + rad;
+      float rr = 0.4 + rad*1.05;
       float th = fract(i*0.3247)*TAU + spin;
       p = vec3(cos(th)*rr, yj*(0.45*exp(-rr*0.12) + 0.07), sin(th)*rr);
-      sz = 0.045;
+      sz = 0.07;
     }
     p = rotX(0.2) * p;
     ord = 0.9;
@@ -417,12 +417,12 @@ void main() {
     float ddv = r.x + r.y - 1.0;
     float rg = length(pos);
     float gc;
-    if (cl < 0.2) gc = 0.9 + 0.1*r.z;
+    if (cl < 0.2) gc = 0.82 + 0.18*r.z;
     else if (cl < 0.68) {
       gc = 0.56 + 0.14*sin(rg*0.7 + r.z*6.0) + 0.3*exp(-rg*0.35) + 0.1*ddv;
       gc = mix(0.14, gc, smoothstep(-1.1, -0.5, ddv));
       gc = max(gc, 0.62);
-    } else gc = 0.12 + 0.08*r.z;
+    } else gc = 0.2 + 0.12*r.z;
     ct = mix(ct, clamp(gc, 0.0, 1.0), sf);
     vPulse = max(vPulse, sf*step(cl, 0.68)*step(0.2, cl)*pow(0.5 + 0.5*sin(rg*0.8 - t*1.3), 8.0)*0.7);
   }
