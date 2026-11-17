@@ -48,14 +48,17 @@ const PALETTES = [
   ['#030a38', '#1050e0', '#20c8ff', '#ff7a30', '#ff4a20'],
   ['#2a0540', '#e0207a', '#ff7a30', '#ffd060', '#40e8ff'],
   ['#2c0e04', '#d84a14', '#ffa828', '#fff0a0', '#3a9cff'],
+  ['#021a3a', '#1a6cff', '#5ce1ff', '#e8fbff', '#ff4a8a'],
+  ['#2a0420', '#d81e5a', '#ff6a3a', '#ffe0a0', '#30e0ff'],
+  ['#041a14', '#12c79a', '#8affd0', '#f0fff8', '#ff8a1e'],
 ].map((p) => p.map((c) => new THREE.Color(c)));
 
 // shader formation ids: 0 sphere, 1 knot, 2 helix, 3 lattice, 4 galaxy, 5 wave, 6 ribbons, 7 rain
 const ORDER = [0, 1, 7, 2, 3, 4, 5, 6];
-const FORM_PAL = [0, 1, 2, 3, 4, 5, 6, 7];
-const FORM_CAM = [15.5, 17, 21, 36, 18, 22, 18, 27];
-const FORM_HEIGHT = [2.5, 2, 1, 11, 15, 8, 8, 3];
-const FLOOR_BY = [-8, -8, -8, -9, -4.5, -4.5, -6, -6.5];
+const FORM_PAL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const FORM_CAM = [15.5, 17, 21, 36, 18, 22, 18, 27, 19, 20, 21];
+const FORM_HEIGHT = [2.5, 2, 1, 11, 15, 8, 8, 3, 3, 3, 6];
+const FLOOR_BY = [-8, -8, -8, -9, -4.5, -4.5, -6, -6.5, -8, -8, -8];
 const HOLD = 9, TRANS = 6, CYCLE = HOLD + TRANS;
 
 const FLOOR_Y = -8.5;
@@ -75,6 +78,13 @@ const uniforms = {
   uL1: { value: new THREE.Vector3() },
   uLc0: { value: new THREE.Color() },
   uLc1: { value: new THREE.Color() },
+  uTimeC: { value: 0 },
+  uTrail: { value: Array.from({ length: 32 }, () => new THREE.Vector4(0, 0, 0, -1000)) },
+  uShape: { value: -1 },
+  uBase: { value: -1 },
+  uClickPt: { value: new THREE.Vector3() },
+  uClickT: { value: 0 },
+  uRelT: { value: -1 },
 };
 const mat = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader });
 const mesh = new THREE.Mesh(geo, mat);
@@ -101,7 +111,8 @@ scene.add(floor);
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.75, 0.7, 0.4));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.75, 0.7, 0.4);
+composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const finish = new ShaderPass(finishShader);
 composer.addPass(finish);
@@ -114,6 +125,63 @@ addEventListener('resize', () => {
 });
 
 const ss = (a, b, x) => { x = Math.min(Math.max((x - a) / (b - a), 0), 1); return x * x * (3 - 2 * x); };
+
+// ---- interaction state ----
+const SHAPES = [8, 9, 10];
+const SETTLE = 5.2, HOLD_CLICK = 6.5, REL = 3.2;
+const click = { phase: 'idle', shape: -1, base: -1, t0: 0, rel0: 0, n: 0, pending: null };
+let tc = timeOffset;        // continuous time (camera, shapes, trail)
+let loopClock = timeOffset; // loop time; frozen during a click
+let cpBlend = 0, clickPal = 8, camDs = null, camHs = null, snap = true;
+const trailPts = uniforms.uTrail.value;
+let trailHead = 0, lastPt = null;
+const ray = new THREE.Raycaster();
+
+function planePoint(ev) {
+  const r = renderer.domElement.getBoundingClientRect();
+  const nx = ((ev.clientX - r.left) / r.width) * 2 - 1, ny = -((ev.clientY - r.top) / r.height) * 2 + 1;
+  camera.updateMatrixWorld();
+  ray.setFromCamera({ x: nx, y: ny }, camera);
+  const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
+  const d = -camera.position.dot(fwd) / ray.ray.direction.dot(fwd);
+  return ray.ray.origin.clone().addScaledVector(ray.ray.direction, d);
+}
+function pushTrail(pt) {
+  const n = lastPt ? Math.min(8, Math.max(1, Math.ceil(pt.distanceTo(lastPt) / 0.3))) : 1;
+  for (let i = 1; i <= n; i++) {
+    const q = lastPt ? lastPt.clone().lerp(pt, i / n) : pt;
+    trailPts[trailHead].set(q.x, q.y, q.z, tc);
+    trailHead = (trailHead + 1) % 32;
+  }
+  lastPt = pt;
+}
+function startClick(pt) {
+  click.base = click.phase === 'active' ? click.shape : -1;
+  click.shape = SHAPES[click.n++ % SHAPES.length];
+  click.phase = 'active'; click.t0 = tc; click.pt = pt; click.pending = null;
+  clickPal = FORM_PAL[click.shape];
+}
+const canvasEl = renderer.domElement;
+canvasEl.style.touchAction = 'none';
+canvasEl.addEventListener('pointermove', (ev) => pushTrail(planePoint(ev)));
+canvasEl.addEventListener('pointerleave', () => { lastPt = null; });
+canvasEl.addEventListener('pointerdown', (ev) => {
+  const pt = planePoint(ev);
+  lastPt = pt; pushTrail(pt);
+  const T = tc - click.t0;
+  if (click.phase === 'idle' || (click.phase === 'active' && T >= SETTLE)) startClick(pt);
+  else click.pending = pt; // mid-shatter / releasing: retarget once settled
+});
+function stepClick() {
+  const T = tc - click.t0;
+  if (click.phase === 'active' && T >= SETTLE) {
+    if (click.pending) startClick(click.pending);
+    else if (T >= SETTLE + HOLD_CLICK) { click.phase = 'rel'; click.rel0 = tc; }
+  } else if (click.phase === 'rel' && tc - click.rel0 >= REL) {
+    click.phase = 'idle'; click.shape = -1; click.base = -1;
+    if (click.pending) startClick(click.pending);
+  }
+}
 
 function update(clock) {
   const k = Math.floor(clock / CYCLE);
@@ -134,7 +202,24 @@ function update(clock) {
   for (let i = 0; i < 4; i++) uniforms.uPal.value[i].copy(pa[i]).lerp(pb[i], pm);
   uniforms.uAccent.value.copy(PALETTES[FORM_PAL[f]][4]).lerp(PALETTES[FORM_PAL[tf]][4], pm);
   uniforms.uLock.value = inTrans ? 99 : local;
+  const act = click.phase === 'active';
+  const T = tc - click.t0;
+  uniforms.uTimeC.value = tc;
+  uniforms.uShape.value = click.shape;
+  uniforms.uBase.value = click.base;
+  uniforms.uClickPt.value.copy(click.pt || uniforms.uClickPt.value);
+  uniforms.uClickT.value = T;
+  uniforms.uRelT.value = click.phase === 'rel' ? tc - click.rel0 : -1;
+  if (act) uniforms.uLock.value = T >= SETTLE ? T - SETTLE : 99;
+  bloom.strength = 0.75 + (act ? 0.4 * Math.exp(-T * 4) + 0.25 * Math.exp(-Math.max(T - SETTLE, 0) * 5) * (T >= SETTLE ? 1 : 0) : 0);
   const P = uniforms.uPal.value;
+  const cpT = click.phase === 'idle' ? 0 : 1;
+  cpBlend = snap ? cpT : cpBlend + (cpT - cpBlend) * Math.min(1, dtNow * 1.6);
+  if (cpBlend > 0.001) {
+    const cp = PALETTES[clickPal];
+    for (let i = 0; i < 4; i++) P[i].lerp(cp[i], cpBlend);
+    uniforms.uAccent.value.lerp(cp[4], cpBlend);
+  }
   floorU.uColor.value.copy(P[1]);
 
   uniforms.uL0.value.set(Math.sin(clock * 0.37) * 6, Math.cos(clock * 0.29) * 3.5, Math.cos(clock * 0.37) * 6);
@@ -146,28 +231,50 @@ function update(clock) {
   const fy = THREE.MathUtils.lerp(FLOOR_BY[f], FLOOR_BY[tf], e);
   uniforms.uFloor.value = fy;
   floor.position.y = fy;
-  const camD = THREE.MathUtils.lerp(FORM_CAM[f], FORM_CAM[tf], e);
-  const camH = THREE.MathUtils.lerp(FORM_HEIGHT[f], FORM_HEIGHT[tf], e);
-  const dist = camD + Math.sin(clock * 0.21) * 1.2;
-  const az = clock * 0.055 + Math.sin(clock * 0.13) * 0.4;
-  camera.position.set(Math.sin(az) * dist, camH + Math.sin(clock * 0.17) * 1.5, Math.cos(az) * dist);
+  let camD = THREE.MathUtils.lerp(FORM_CAM[f], FORM_CAM[tf], e);
+  let camH = THREE.MathUtils.lerp(FORM_HEIGHT[f], FORM_HEIGHT[tf], e);
+  if (act || click.phase === 'rel') { /* shape targets while held */ }
+  if (act) { camD = FORM_CAM[click.shape]; camH = FORM_HEIGHT[click.shape]; }
+  if (camDs === null || snap) { camDs = camD; camHs = camH; }
+  else { const k2 = Math.min(1, dtNow * 0.9); camDs += (camD - camDs) * k2; camHs += (camH - camHs) * k2; }
+  camD = camDs; camH = camHs;
+  const dist = camD + Math.sin(tc * 0.21) * 1.2;
+  const az = tc * 0.055 + Math.sin(tc * 0.13) * 0.4;
+  camera.position.set(Math.sin(az) * dist, camH + Math.sin(tc * 0.17) * 1.5, Math.cos(az) * dist);
   camera.lookAt(0, Math.sin(clock * 0.11) * 0.6, 0);
 
   finish.uniforms.uTime.value = clock % 10;
 }
 
-const t0 = performance.now();
+let dtNow = 1 / 60;
+let last = performance.now();
+function advance(dt) {
+  dtNow = dt;
+  tc += dt;
+  stepClick();
+  if (click.phase === 'idle') loopClock += dt;
+  update(loopClock);
+  snap = false;
+}
 let frame = 0;
 function loop() {
   frame++;
+  const n = performance.now();
   if (!window.__freeze) {
-    update(timeOffset + (performance.now() - t0) / 1000);
+    advance(Math.min((n - last) / 1000, 0.1));
     composer.render();
   }
+  last = n;
   window.__frames = frame;
   requestAnimationFrame(loop);
 }
 loop();
 
-// capture hook: freeze the clock at an exact moment and render
-window.__setClock = (c) => { window.__freeze = true; update(c); composer.render(); };
+// capture hooks
+window.__setClock = (c) => { window.__freeze = true; tc = loopClock = c; snap = true; update(c); composer.render(); };
+window.__advance = (dt, render = true) => { window.__freeze = true; advance(dt); if (render) composer.render(); };
+window.__pointer = (type, x, y) => {
+  const ev = { clientX: x, clientY: y };
+  if (type === 'move') pushTrail(planePoint(ev));
+  else if (type === 'down') canvasEl.dispatchEvent(Object.assign(new Event('pointerdown'), ev));
+};

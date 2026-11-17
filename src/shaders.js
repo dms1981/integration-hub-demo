@@ -11,6 +11,13 @@ uniform float uCount;
 uniform float uLock;
 uniform float uMirror;
 uniform float uFloor;
+uniform float uTimeC;
+uniform vec4 uTrail[32];
+uniform float uShape;
+uniform float uBase;
+uniform vec3 uClickPt;
+uniform float uClickT;
+uniform float uRelT;
 
 varying vec3 vNormal;
 varying vec3 vWorld;
@@ -55,6 +62,19 @@ vec3 lissa(float a, float k, float t) {
     3.6*sin(2.0*a + k*0.71 - t*0.31),
     5.2*sin(5.0*a + k*0.43 + t*0.17 + 1.2) * cos(a + k*0.5));
 }
+
+vec3 fib(float k, float n) {
+  float y = 1.0 - 2.0*(k + 0.5)/n;
+  float rad = sqrt(max(1.0 - y*y, 0.0));
+  float th = k*2.399963;
+  return vec3(cos(th)*rad, y, sin(th)*rad);
+}
+float h1(float x){ return fract(sin(x*12.9898)*43758.5453); }
+const float PHI = 1.6180339887;
+const vec3 ICO[12] = vec3[12](
+  vec3(0.,1.,PHI), vec3(0.,-1.,PHI), vec3(0.,1.,-PHI), vec3(0.,-1.,-PHI),
+  vec3(1.,PHI,0.), vec3(-1.,PHI,0.), vec3(1.,-PHI,0.), vec3(-1.,-PHI,0.),
+  vec3(PHI,0.,1.), vec3(PHI,0.,-1.), vec3(-PHI,0.,1.), vec3(-PHI,0.,-1.));
 
 // returns position; sz = cube size, ord = 0 (chaotic tumble) .. 1 (aligned)
 vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) {
@@ -145,7 +165,7 @@ vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) 
     vec3 bn = cross(tg, nn);
     p += nn*(r.x-0.5)*(0.9 + 0.7*sin(a*4.0 + t + k)) + bn*(r.y-0.5)*0.12;
     sz = 0.085; ord = 1.0;
-  } else { // rain columns
+  } else if (id < 7.5) { // rain columns
     float cx = mod(i, 25.0);
     float cz = mod(floor(i/25.0), 25.0);
     float h = floor(i/625.0);
@@ -157,6 +177,48 @@ vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) 
     p = rotY(tw) * vec3(c.x, y, c.y);
     p.xz *= 1.0 + 0.3*sin(y*0.4 + t*0.5);
     sz = 0.13; ord = 1.0;
+  } else if (id < 8.5) { // icosahedron wireframe
+    int ne = int(mod(i, 30.0));
+    int cnt = 0;
+    vec3 va = vec3(0.0), vb = vec3(0.0);
+    for (int a = 0; a < 12; a++) {
+      for (int b = a + 1; b < 12; b++) {
+        vec3 d = ICO[a] - ICO[b];
+        if (dot(d, d) < 5.0) {
+          if (cnt == ne) { va = ICO[a]; vb = ICO[b]; }
+          cnt++;
+        }
+      }
+    }
+    float al = (floor(i/30.0) + 0.5)/(uCount/30.0);
+    p = mix(va, vb, al) * (5.8/1.902) + (r.xyz - 0.5)*0.1;
+    p = rotY(t*0.22) * (rotX(0.35) * p);
+    float nd = abs(al - 0.5)*2.0;
+    sz = 0.07 + 0.12*pow(nd, 8.0); ord = 1.0;
+  } else if (id < 9.5) { // sea urchin
+    float N = 120.0;
+    float sp = mod(i, N);
+    float al = (floor(i/N) + 0.5)/(uCount/N);
+    if (r.w < 0.1) {
+      p = fib(i, uCount)*1.45;
+      sz = 0.08;
+    } else {
+      float len = 3.0 + 3.8*h1(sp);
+      float rad = 1.3 + al*len;
+      p = fib(sp, N) * rad * (1.0 + 0.05*sin(t*1.6 + sp*1.7 - al*4.0));
+      p += (r.xyz - 0.5)*0.32*(1.0 - al);
+      sz = 0.065 + 0.04*al + 0.06*step(0.94, al);
+    }
+    p = rotY(t*0.15) * (rotX(0.4*sin(t*0.2)) * p);
+    ord = 1.0;
+  } else { // moebius band
+    float a = mod(i, 250.0)/250.0*TAU;
+    float v = floor(i/250.0)/62.0*2.0 - 1.0;
+    float hf = a*0.5 + t*0.25;
+    float rr = 6.0 + v*2.3*cos(hf);
+    p = vec3(rr*cos(a), rr*sin(a), v*2.3*sin(hf));
+    p = rotY(t*0.18) * (rotX(0.5) * p);
+    sz = 0.055; ord = 1.0;
   }
   return p;
 }
@@ -184,13 +246,70 @@ void main() {
   pos.y -= bump*bump*(2.0 + 4.0*r.z) * (uStyle < 0.5 ? 1.0 : 0.0);
 
   float cur = e < 0.5 ? uFrom : uTo;
-  float latt = step(2.5, cur)*step(cur, 3.5);
-  float sph = step(cur, 0.5);
+  float ca = (uShape > -0.5 && uRelT < 0.0) ? 1.0 : 0.0;
+  float latt = step(2.5, cur)*step(cur, 3.5)*(1.0 - ca);
+  float sph = step(cur, 0.5)*(1.0 - ca);
   float big = step(0.972, fract(r.w*7.13 + r.y*3.1)) * (1.0 - latt) * (1.0 - sph);
   float sz = mix(szA, szB, e) * mix(0.55 + 0.75*r.z*r.z, 0.95, latt) * (1.0 + big*1.7);
   float ord = mix(ordA, ordB, e) * (1.0 - bump);
+  float xglow = 0.0;
+  float varS = (0.55 + 0.75*r.z*r.z) * (1.0 + big*1.7);
 
-  float ang = (r.w*TAU + t*(0.25 + r.x*0.7)) * (1.0 - ord) + bump*(3.0 + 6.0*r.y);
+  if (uShape > -0.5) {
+    float szS, ordS;
+    vec3 sP = formation(uShape, aIdx, r, uTimeC, szS, ordS);
+    szS *= varS;
+    if (uRelT >= 0.0) {
+      float d0 = clamp(length(sP)/12.0, 0.0, 1.0);
+      float er = clamp((uRelT - r.w*0.9 - d0*0.5)/2.2, 0.0, 1.0);
+      er = er*er*er*(er*(er*6.0 - 15.0) + 10.0);
+      float bp = sin(PI*er);
+      pos = mix(sP, pos, er) + curl(sP*0.7 + r.xyz*3.0, uTimeC*0.8)*bp*2.2;
+      sz = mix(szS, sz, er);
+      ord = mix(ordS, ord, er);
+      bump = max(bp*0.3, bump*er);
+    } else {
+      vec3 bP = pos; float bsz = sz, bord = ord;
+      if (uBase > -0.5) { bP = formation(uBase, aIdx, r, uTimeC, bsz, bord); bsz *= varS; }
+      float T = uClickT;
+      float d01 = clamp(length(bP - uClickPt)/14.0, 0.0, 1.0);
+      float ts = max(T - d01*0.8, 0.0);
+      vec3 dirO = normalize(bP - uClickPt + (r.xyz - 0.5)*2.0 + 1e-3);
+      float spd = 1.0 + 4.0*r.y*r.y + 1.5*r.z;
+      float on = 1.0 - exp(-ts*2.5);
+      vec3 burst = dirO*spd*on + curl(bP*0.5 + r.xyz*3.0, uTimeC*0.8)*on*1.2;
+      float er = clamp((T - 1.3 - r.w*1.1 - d01*0.4)/2.6, 0.0, 1.0);
+      er = er*er*er*(er*(er*6.0 - 15.0) + 10.0);
+      float bp = sin(PI*er);
+      pos = mix(bP + burst, sP, er);
+      float shat = smoothstep(0.0, 0.25, ts)*(1.0 - er);
+      bump = max(bp*0.3, shat*0.4);
+      sz = mix(bsz, szS, er);
+      ord = mix(bord*(1.0 - smoothstep(0.0, 0.3, ts)), ordS, er);
+      xglow += 1.2*exp(-T*3.5)*exp(-d01*5.0);
+    }
+  }
+
+  // fingertip wake: displace cubes away from rays through recent cursor points
+  float lift = 0.0;
+  vec3 dd = vec3(0.0);
+  for (int k = 0; k < 32; k++) {
+    vec4 tp = uTrail[k];
+    float age = uTimeC - tp.w;
+    if (age < 0.0 || age > 2.6) continue;
+    vec3 rd = normalize(tp.xyz - cameraPosition);
+    vec3 q = pos - cameraPosition;
+    vec3 perp = q - rd*dot(q, rd);
+    float dist = length(perp);
+    float s = exp(-dist*dist*1.8) * (1.0 - smoothstep(0.1, 2.5, age)) * (1.0 - exp(-age*12.0));
+    dd += perp/(dist + 0.25)*s;
+    lift = max(lift, s);
+  }
+  float dl = length(dd);
+  pos += dd * (1.3*min(dl, 1.0)/max(dl, 1e-4)) + curl(pos*0.8 + r.xyz*2.0, uTimeC)*lift*0.3;
+  xglow += lift*0.5;
+
+  float ang = (r.w*TAU + t*(0.25 + r.x*0.7)) * (1.0 - ord) + bump*(3.0 + 6.0*r.y) + lift*(2.0 + 3.0*r.y);
   vec3 axis = normalize(r.xyz*2.0 - 1.0 + 1e-3);
   mat3 R = rot(axis, ang);
 
@@ -206,8 +325,8 @@ void main() {
   vUv = uv;
   vPulse = pulse;
   float ring = exp(-pow((length(pos) - uLock*9.0)*0.45, 2.0)) * step(uLock, 2.4);
-  vGlow = bump + 1.6*exp(-uLock*4.5) + 1.8*ring;
-  float wv = step(4.5, cur)*step(cur, 5.5);
+  vGlow = bump + 1.6*exp(-uLock*4.5) + 1.8*ring + xglow;
+  float wv = step(4.5, cur)*step(cur, 5.5)*(1.0 - ca);
   vSpark = step(0.96, fract(r.w*17.31 + r.x*3.7));
   vBig = big;
 
@@ -220,6 +339,8 @@ void main() {
   ct = mix(ct, clamp(0.55 + pos.x*0.04 + pos.y*0.05 + 0.3*sin(length(pos)*0.5 - t*0.8), 0.0, 1.0), latt);
   ct = mix(ct, smoothstep(-2.8, 2.2, pos.y) , wv);
   vPulse = max(vPulse, wv*smoothstep(0.5, 2.4, pos.y));
+  float isU = ca*step(8.5, uShape)*step(uShape, 9.5);
+  ct = mix(ct, smoothstep(0.0, 7.5, length(pos)), isU);
   vCt = clamp(ct, 0.0, 1.0);
 
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);

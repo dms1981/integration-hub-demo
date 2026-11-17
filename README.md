@@ -22,3 +22,10 @@ npx playwright install chromium
 node tools/capture.mjs shots 4,20,38,80      # screenshots at given times
 node tools/video.mjs out.mp4 38 12 12        # start s, duration s, fps
 ```
+
+## Interaction
+
+- **Move the mouse / drag a finger** over the canvas: cubes near the pointer part like sand, tumble and glow, then slowly coalesce back (~2.5s). The last 32 pointer positions are passed as a uniform array and the wake is computed per-vertex in the shader; no cursor is drawn.
+- **Click / tap**: the sculpture shatters outward from the click point (rippling by distance, with a bloom flash), then reforms into a click-only shape. Successive clicks cycle icosahedron wireframe → sea urchin → Möbius band. After a settled hold (~6.5s, with the lock flash) it flows back into the main loop where it left off. Clicks during a shatter or release are queued and applied once settled, so nothing pops.
+
+Interaction capture (deterministic virtual time): `node tools/interact.mjs <outdir> [startClock]` and `node tools/interact-video.mjs <out.mp4> [startClock]`.
