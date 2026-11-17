@@ -35,7 +35,7 @@ await adv(0.15); await shot('click-shatter-0.15s');
 await adv(0.45); await shot('click-shatter-0.6s');
 await adv(1.2); await shot('click-reform-1.8s');
 await adv(1.2); await shot('click-reform-3.0s');
-await adv(2.6); await shot('click-shape-1-icosahedron');
+await adv(3.3); await shot('click-shape-1-icosahedron');
 await adv(1.5);
 await page.mouse.click(760, 330); // chain: next shape
 await adv(0.4); await shot('click2-shatter');
@@ -43,5 +43,13 @@ await adv(5.4); await shot('click2-shape-urchin');
 await adv(0.5);
 await page.mouse.click(500, 400);
 await adv(6.0); await shot('click3-shape-moebius');
+// rapid double click: second click lands mid-shatter and retargets
+await adv(8.0);
+await page.mouse.click(600, 300);
+await adv(0.9); await shot('double-1-first-click');
+await page.mouse.click(760, 400);
+await adv(0.1); await shot('double-2-retarget-0.1s');
+await adv(0.7); await shot('double-3-retarget-0.8s');
+await adv(3.4); await shot('double-4-settled');
 console.log('errors:', errors.length ? errors.slice(0, 10) : 'none');
 await browser.close();

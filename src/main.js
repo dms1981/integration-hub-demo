@@ -81,7 +81,11 @@ const uniforms = {
   uTimeC: { value: 0 },
   uTrail: { value: Array.from({ length: 32 }, () => new THREE.Vector4(0, 0, 0, -1000)) },
   uShape: { value: -1 },
-  uBase: { value: -1 },
+  uPrevShape: { value: -1 },
+  uPrevT: { value: 0 },
+  uPrevPt: { value: new THREE.Vector3() },
+  uTS: { value: 1 },
+  uAmp: { value: 1 },
   uClickPt: { value: new THREE.Vector3() },
   uClickT: { value: 0 },
   uRelT: { value: -1 },
@@ -128,8 +132,9 @@ const ss = (a, b, x) => { x = Math.min(Math.max((x - a) / (b - a), 0), 1); retur
 
 // ---- interaction state ----
 const SHAPES = [8, 9, 10];
-const SETTLE = 5.2, HOLD_CLICK = 6.5, REL = 3.2;
-const click = { phase: 'idle', shape: -1, base: -1, t0: 0, rel0: 0, n: 0, pending: null };
+const SETTLE = 5.6, HOLD_CLICK = 6.5, REL = 2.4, COOLDOWN = 0.6, RETARGET_TS = 1.7;
+const click = { phase: 'idle', shape: -1, prev: -1, prevT: 0, prevPt: null, ts: 1, amp: 1, t0: 0, rel0: 0, n: 0, pending: null };
+const settleT = () => SETTLE / click.ts;
 let tc = timeOffset;        // continuous time (camera, shapes, trail)
 let loopClock = timeOffset; // loop time; frozen during a click
 let cpBlend = 0, clickPal = 8, camDs = null, camHs = null, snap = true;
@@ -156,8 +161,13 @@ function pushTrail(pt) {
   lastPt = pt;
 }
 function startClick(pt) {
-  click.base = click.phase === 'active' ? click.shape : -1;
+  const T = (tc - click.t0) * click.ts;
+  const fresh = click.phase !== 'active';
+  if (!fresh) { click.prev = click.shape; click.prevT = T; click.prevPt = click.pt; }
+  else click.prev = -1;
   click.shape = SHAPES[click.n++ % SHAPES.length];
+  click.ts = fresh || T >= SETTLE ? 1 : RETARGET_TS;
+  click.amp = fresh || T >= SETTLE ? 1 : 0.5;
   click.phase = 'active'; click.t0 = tc; click.pt = pt; click.pending = null;
   clickPal = FORM_PAL[click.shape];
 }
@@ -169,16 +179,16 @@ canvasEl.addEventListener('pointerdown', (ev) => {
   const pt = planePoint(ev);
   lastPt = pt; pushTrail(pt);
   const T = tc - click.t0;
-  if (click.phase === 'idle' || (click.phase === 'active' && T >= SETTLE)) startClick(pt);
-  else click.pending = pt; // mid-shatter / releasing: retarget once settled
+  if (click.phase === 'idle') startClick(pt);
+  else if (click.phase === 'active') { if (T >= COOLDOWN) startClick(pt); } // retarget from current positions
+  else click.pending = pt; // releasing: start once back in the loop
 });
 function stepClick() {
   const T = tc - click.t0;
-  if (click.phase === 'active' && T >= SETTLE) {
-    if (click.pending) startClick(click.pending);
-    else if (T >= SETTLE + HOLD_CLICK) { click.phase = 'rel'; click.rel0 = tc; }
+  if (click.phase === 'active' && T >= settleT()) {
+    if (T >= settleT() + HOLD_CLICK) { click.phase = 'rel'; click.rel0 = tc; }
   } else if (click.phase === 'rel' && tc - click.rel0 >= REL) {
-    click.phase = 'idle'; click.shape = -1; click.base = -1;
+    click.phase = 'idle'; click.shape = -1; click.prev = -1;
     if (click.pending) startClick(click.pending);
   }
 }
@@ -206,12 +216,16 @@ function update(clock) {
   const T = tc - click.t0;
   uniforms.uTimeC.value = tc;
   uniforms.uShape.value = click.shape;
-  uniforms.uBase.value = click.base;
+  uniforms.uPrevShape.value = click.prev;
+  uniforms.uPrevT.value = click.prevT;
+  if (click.prevPt) uniforms.uPrevPt.value.copy(click.prevPt);
+  uniforms.uTS.value = click.ts;
+  uniforms.uAmp.value = click.amp;
   uniforms.uClickPt.value.copy(click.pt || uniforms.uClickPt.value);
   uniforms.uClickT.value = T;
   uniforms.uRelT.value = click.phase === 'rel' ? tc - click.rel0 : -1;
-  if (act) uniforms.uLock.value = T >= SETTLE ? T - SETTLE : 99;
-  bloom.strength = 0.75 + (act ? 0.4 * Math.exp(-T * 4) + 0.25 * Math.exp(-Math.max(T - SETTLE, 0) * 5) * (T >= SETTLE ? 1 : 0) : 0);
+  if (act) uniforms.uLock.value = T >= settleT() ? T - settleT() : 99;
+  bloom.strength = 0.75 + (act ? 0.4 * Math.exp(-T * 4) + 0.25 * Math.exp(-Math.max(T - settleT(), 0) * 5) * (T >= settleT() ? 1 : 0) : 0);
   const P = uniforms.uPal.value;
   const cpT = click.phase === 'idle' ? 0 : 1;
   cpBlend = snap ? cpT : cpBlend + (cpT - cpBlend) * Math.min(1, dtNow * 1.6);

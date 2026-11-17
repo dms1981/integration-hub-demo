@@ -14,7 +14,11 @@ uniform float uFloor;
 uniform float uTimeC;
 uniform vec4 uTrail[32];
 uniform float uShape;
-uniform float uBase;
+uniform float uPrevShape;
+uniform float uPrevT;
+uniform vec3 uPrevPt;
+uniform float uTS;
+uniform float uAmp;
 uniform vec3 uClickPt;
 uniform float uClickT;
 uniform float uRelT;
@@ -211,16 +215,45 @@ vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) 
     }
     p = rotY(t*0.15) * (rotX(0.4*sin(t*0.2)) * p);
     ord = 1.0;
-  } else { // moebius band
-    float a = mod(i, 250.0)/250.0*TAU;
-    float v = floor(i/250.0)/62.0*2.0 - 1.0;
+  } else { // moebius band: three rails, sparse twisted rungs, faint dust
+    float g = fract(i*0.6180339);
+    float a, v, jit = 0.0;
+    float cls = r.w;
+    sz = 0.07;
+    if (cls < 0.55) { a = g*TAU; v = -1.0 + floor(r.y*3.0)*1.0; jit = 0.05; }
+    else if (cls < 0.85) { a = (floor(g*40.0) + 0.5)/40.0*TAU; v = -1.0 + 2.0*fract(i*0.7548); jit = 0.04; sz = 0.06; }
+    else { a = g*TAU; v = (r.y - 0.5)*2.0; sz = 0.04; }
     float hf = a*0.5 + t*0.25;
     float rr = 6.0 + v*2.3*cos(hf);
     p = vec3(rr*cos(a), rr*sin(a), v*2.3*sin(hf));
+    if (cls >= 0.85) p += (r.xzy - 0.5)*3.5;
+    else p += (r.xyz - 0.5)*jit*2.0;
     p = rotY(t*0.18) * (rotX(0.5) * p);
-    sz = 0.055; ord = 1.0;
+    ord = 1.0;
   }
   return p;
+}
+
+vec3 clickLayer(float shp, vec3 bP, float bsz, float bord, vec3 pt, float Tr, float amp, float varS,
+                float aIdx, vec4 r, out float osz, out float oord, out float obump, out float oglow) {
+  float szS, ordS;
+  vec3 sP = formation(shp, aIdx, r, uTimeC, szS, ordS);
+  szS *= varS;
+  float T = Tr;
+  float d01 = clamp(length(bP - pt)/14.0, 0.0, 1.0);
+  float ts = max(T - d01*0.8, 0.0);
+  vec3 dirO = normalize(bP - pt + (r.xyz - 0.5)*2.0 + 1e-3);
+  float spd = (1.0 + 4.0*r.y*r.y + 1.5*r.z)*amp;
+  float on = 1.0 - exp(-ts*2.5);
+  vec3 burst = dirO*spd*on + curl(bP*0.5 + r.xyz*3.0, uTimeC*0.8)*on*1.2*amp;
+  float er = clamp((T - 1.3 - r.w*1.1 - d01*0.4)/2.6, 0.0, 1.0);
+  er = er*er*er*(er*(er*6.0 - 15.0) + 10.0);
+  float bp = sin(PI*er);
+  osz = mix(bsz, szS, er);
+  oord = mix(bord*(1.0 - smoothstep(0.0, 0.3, ts)), ordS, er);
+  obump = max(bp*0.3, smoothstep(0.0, 0.25, ts)*(1.0 - er)*0.4);
+  oglow = 1.2*amp*exp(-T*3.5)*exp(-d01*5.0);
+  return mix(bP + burst, sP, er);
 }
 
 void main() {
@@ -269,24 +302,14 @@ void main() {
       ord = mix(ordS, ord, er);
       bump = max(bp*0.3, bump*er);
     } else {
-      vec3 bP = pos; float bsz = sz, bord = ord;
-      if (uBase > -0.5) { bP = formation(uBase, aIdx, r, uTimeC, bsz, bord); bsz *= varS; }
-      float T = uClickT;
-      float d01 = clamp(length(bP - uClickPt)/14.0, 0.0, 1.0);
-      float ts = max(T - d01*0.8, 0.0);
-      vec3 dirO = normalize(bP - uClickPt + (r.xyz - 0.5)*2.0 + 1e-3);
-      float spd = 1.0 + 4.0*r.y*r.y + 1.5*r.z;
-      float on = 1.0 - exp(-ts*2.5);
-      vec3 burst = dirO*spd*on + curl(bP*0.5 + r.xyz*3.0, uTimeC*0.8)*on*1.2;
-      float er = clamp((T - 1.3 - r.w*1.1 - d01*0.4)/2.6, 0.0, 1.0);
-      er = er*er*er*(er*(er*6.0 - 15.0) + 10.0);
-      float bp = sin(PI*er);
-      pos = mix(bP + burst, sP, er);
-      float shat = smoothstep(0.0, 0.25, ts)*(1.0 - er);
-      bump = max(bp*0.3, shat*0.4);
-      sz = mix(bsz, szS, er);
-      ord = mix(bord*(1.0 - smoothstep(0.0, 0.3, ts)), ordS, er);
-      xglow += 1.2*exp(-T*3.5)*exp(-d01*5.0);
+      vec3 bP = pos; float bsz = sz, bord = ord, pb = 0.0, pg = 0.0;
+      if (uPrevShape > -0.5) {
+        bP = clickLayer(uPrevShape, pos, sz, ord, uPrevPt, uPrevT, 1.0, varS, aIdx, r, bsz, bord, pb, pg);
+      }
+      float cb, cg;
+      pos = clickLayer(uShape, bP, bsz, bord, uClickPt, uClickT*uTS, uAmp, varS, aIdx, r, sz, ord, cb, cg);
+      bump = max(cb, pb*(1.0 - smoothstep(0.0, 0.6, uClickT)));
+      xglow += cg;
     }
   }
 
@@ -301,12 +324,12 @@ void main() {
     vec3 q = pos - cameraPosition;
     vec3 perp = q - rd*dot(q, rd);
     float dist = length(perp);
-    float s = exp(-dist*dist*1.8) * (1.0 - smoothstep(0.1, 2.5, age)) * (1.0 - exp(-age*12.0));
+    float s = exp(-dist*dist*5.0) * (1.0 - smoothstep(0.1, 2.5, age)) * (1.0 - exp(-age*12.0));
     dd += perp/(dist + 0.25)*s;
     lift = max(lift, s);
   }
   float dl = length(dd);
-  pos += dd * (1.3*min(dl, 1.0)/max(dl, 1e-4)) + curl(pos*0.8 + r.xyz*2.0, uTimeC)*lift*0.3;
+  pos += dd * (3.0*min(dl, 1.0)/max(dl, 1e-4)) + curl(pos*0.8 + r.xyz*2.0, uTimeC)*lift*0.6;
   xglow += lift*0.5;
 
   float ang = (r.w*TAU + t*(0.25 + r.x*0.7)) * (1.0 - ord) + bump*(3.0 + 6.0*r.y) + lift*(2.0 + 3.0*r.y);

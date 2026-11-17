@@ -29,6 +29,7 @@ for (let f = 0; f < T; f++) {
     await page.mouse.move(x, y, { steps: 2 });
   }
   if (Math.abs(t - 4.4) < 0.5 / FPS) await page.mouse.click(660, 360);
+  if (Math.abs(t - 5.4) < 0.5 / FPS) await page.mouse.click(780, 400);
   await frame();
 }
 await browser.close();
