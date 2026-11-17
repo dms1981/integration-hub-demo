@@ -55,7 +55,8 @@ const PALETTES = [
   ['#050c3a', '#2850ff', '#38d4ff', '#eaf6ff', '#ff3a7a'],
 ].map((p) => p.map((c) => new THREE.Color(c)));
 
-// shader formation ids: 0 sphere, 1 knot, 2 helix, 3 lattice, 4 galaxy, 5 wave, 6 ribbons, 7 rain
+// formation ids: 0 sphere, 1 knot, 2 helix, 3 lattice, 4 galaxy, 5 wave, 6 ribbons, 7 rain,
+// 8 icosahedron, 9 urchin, 10 mobius (click-only), 11 dense galaxy, 12 breathing block
 const ORDER = [0, 1, 7, 11, 2, 3, 4, 5, 12, 6];
 const FORM_PAL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const FORM_CAM = [15.5, 17, 21, 36, 18, 22, 18, 27, 19, 20, 21, 17, 25];
@@ -139,7 +140,7 @@ const SHAPES = [8, 9, 10, 11, 12];
 const SETTLE = 5.6, HOLD_CLICK = 6.5, REL = 2.4, COOLDOWN = 0.6, RETARGET_TS = 1.7;
 const click = { phase: 'idle', shape: -1, prev: -1, prevT: 0, prevPt: null, ts: 1, amp: 1, t0: 0, rel0: 0, n: 0, pending: null };
 const settleT = () => SETTLE / click.ts;
-let tc = timeOffset;        // continuous time (camera, shapes, trail)
+let tc = timeOffset;        // continuous time (camera, shapes, wake)
 let loopClock = timeOffset; // loop time; frozen during a click
 let cpBlend = 0, clickPal = 8, camDs = null, camHs = null, snap = true;
 // ---- water wake: 2D wave-equation sim on a small half-float target ----
@@ -352,19 +353,11 @@ function loop() {
 }
 loop();
 
-// capture hooks
+// deterministic-time hooks for tools/*.mjs captures
 window.__setClock = (c) => { window.__freeze = true; tc = loopClock = c; snap = true; simReset(); simAcc = 0; lastPt = null; update(c); composer.render(); };
 window.__advance = (dt, render = true) => { window.__freeze = true; advance(dt); if (render) composer.render(); };
 window.__pointer = (type, x, y) => {
   const ev = { clientX: x, clientY: y };
   if (type === 'move') wakeDrop(ev);
   else if (type === 'down') canvasEl.dispatchEvent(Object.assign(new Event('pointerdown'), ev));
-};
-window.__simStat = () => {
-  const buf = new Uint16Array(SW * SH * 4);
-  renderer.readRenderTargetPixels(simRT[simCur], 0, 0, SW, SH, buf);
-  const f = (h) => { const e = (h >> 10) & 31, m = h & 1023, sgn = h >> 15 ? -1 : 1; return e === 0 ? sgn * m * 2 ** -24 : e === 31 ? (m ? NaN : sgn * Infinity) : sgn * (1 + m / 1024) * 2 ** (e - 15); };
-  let mx = 0, nan = 0, nz = 0;
-  for (let i = 0; i < SW * SH; i++) { const v = f(buf[i * 4]); if (Number.isNaN(v)) nan++; else { mx = Math.max(mx, Math.abs(v)); if (Math.abs(v) > 1e-3) nz++; } }
-  return { mx, nan, nz };
 };

@@ -353,7 +353,7 @@ void main() {
     }
   }
 
-  // water wake: screen-space ripple height field (see main.js) nudges cubes sideways
+  // water wake: screen-space ripple height field (see main.js) displaces cubes, mostly along the view direction
   vec4 wclip = projectionMatrix * viewMatrix * vec4(pos, 1.0);
   vec2 suv = wclip.xy/wclip.w*0.5 + 0.5;
   float hC = texture2D(uSim, suv).r;
