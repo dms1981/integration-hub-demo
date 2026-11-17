@@ -12,7 +12,9 @@ uniform float uLock;
 uniform float uMirror;
 uniform float uFloor;
 uniform float uTimeC;
-uniform vec4 uTrail[32];
+uniform sampler2D uSim;
+uniform vec2 uSimTexel;
+uniform float uWakeGain;
 uniform float uShape;
 uniform float uPrevShape;
 uniform float uPrevT;
@@ -31,6 +33,7 @@ varying float vGlow;
 varying float vSpark;
 varying float vPulse;
 varying float vBig;
+varying float vWake;
 
 const float PI = 3.14159265359;
 const float TAU = 6.28318530718;
@@ -313,32 +316,36 @@ void main() {
     }
   }
 
-  // fingertip wake: displace cubes away from rays through recent cursor points
-  float lift = 0.0;
-  vec3 dd = vec3(0.0);
-  for (int k = 0; k < 32; k++) {
-    vec4 tp = uTrail[k];
-    float age = uTimeC - tp.w;
-    if (age < 0.0 || age > 2.6) continue;
-    vec3 rd = normalize(tp.xyz - cameraPosition);
-    vec3 q = pos - cameraPosition;
-    vec3 perp = q - rd*dot(q, rd);
-    float dist = length(perp);
-    float R = 0.2 + 1.5*age;
-    float decay = (1.0 - smoothstep(0.3, 2.6, age)) / (1.0 + 1.5*age);
-    float shell = exp(-(dist - R)*(dist - R)/(0.08 + 0.12*age));
-    float core = exp(-dist*dist/0.06) * (1.0 - smoothstep(0.0, 0.35, age));
-    float w = shell*decay*(0.6 + 0.4*cos(age*9.0 - dist*5.0)) + core*0.6;
-    dd += perp/(dist + 0.1)*w*0.5;
-    lift = max(lift, shell*decay + core);
-  }
-  float dl = length(dd);
-  pos += dd * (min(dl, 1.2)/max(dl, 1e-4)) + curl(pos*1.3 + r.xyz*2.0, uTimeC*1.5)*lift*0.35;
-  xglow += lift*0.5;
+  // water wake: screen-space ripple height field (see main.js) nudges cubes sideways
+  vec4 wclip = projectionMatrix * viewMatrix * vec4(pos, 1.0);
+  vec2 suv = wclip.xy/wclip.w*0.5 + 0.5;
+  float hC = texture2D(uSim, suv).r;
+  float gx = 0.5*(texture2D(uSim, suv + vec2(uSimTexel.x, 0.0)).r - texture2D(uSim, suv - vec2(uSimTexel.x, 0.0)).r);
+  float gy = 0.5*(texture2D(uSim, suv + vec2(0.0, uSimTexel.y)).r - texture2D(uSim, suv - vec2(0.0, uSimTexel.y)).r);
+  vec3 camR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+  vec3 camU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+  vec3 camF = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+  vec3 side = -(camR*gx + camU*gy)*uWakeGain;
+  side *= min(1.0, 0.3/max(length(side), 1e-5));
+  float hw = hC*uWakeGain;
+  vec3 depth = camF*clamp(hw*1.8, -1.1, 1.1);
+  pos += side + depth;
+  vWake = clamp(hw*1.2, -1.0, 1.0);
+  float lift = clamp(length(vec2(gx, gy))*uWakeGain*1.2 + abs(hC)*uWakeGain*0.3, 0.0, 1.0);
+  xglow += lift*0.6;
 
-  float ang = (r.w*TAU + t*(0.25 + r.x*0.7)) * (1.0 - ord) + bump*(3.0 + 6.0*r.y) + lift*(2.0 + 3.0*r.y);
+  float ang = (r.w*TAU + t*(0.25 + r.x*0.7)) * (1.0 - ord) + bump*(3.0 + 6.0*r.y) + lift*(0.8 + 1.2*r.y);
   vec3 axis = normalize(r.xyz*2.0 - 1.0 + 1e-3);
   mat3 R = rot(axis, ang);
+  float wk = clamp(length(vec2(gx, gy))*uWakeGain*2.5, 0.0, 1.0);
+  if (wk > 0.001) {
+    vec3 sn = normalize(camF*-1.0 - (camR*gx + camU*gy)*uWakeGain*6.0);
+    vec3 cF = -camF;
+    vec3 tax = cross(cF, sn);
+    float tl = length(tax);
+    if (tl > 1e-4) R = rot(tax/tl, asin(min(tl,1.0))*wk) * R;
+  }
+  sz *= 1.0 + 0.15*clamp(hw*1.2, -1.0, 1.0);
 
   float pulse = 0.5 + 0.5*sin(dot(pos, normalize(vec3(0.6,0.3,0.7)))*0.55 - t*1.6 + r.x*0.8);
   pulse = pow(pulse, 6.0);
@@ -392,6 +399,7 @@ varying float vGlow;
 varying float vSpark;
 varying float vPulse;
 varying float vBig;
+varying float vWake;
 
 vec3 grad(float t) {
   t = clamp(t, 0.0, 1.0) * 3.0;
@@ -429,6 +437,8 @@ void main() {
   if (uMirror > 0.5) lit *= 0.6 * exp(-abs(vWorld.y - uFloor)*0.16);
   float fog = exp(-max(dist - 10.0, 0.0)*0.045);
   vec3 fogCol = vec3(0.004, 0.006, 0.02);
+  lit *= 1.0 - 0.4*clamp(-vWake, 0.0, 1.0);
+  lit += bright * pow(max(dot(n, normalize(V + K)), 0.0), 24.0) * clamp(vWake, 0.0, 1.0) * 0.9;
   lit = mix(fogCol, lit, fog);
 
   gl_FragColor = vec4(lit, 1.0);

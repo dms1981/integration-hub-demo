@@ -79,7 +79,9 @@ const uniforms = {
   uLc0: { value: new THREE.Color() },
   uLc1: { value: new THREE.Color() },
   uTimeC: { value: 0 },
-  uTrail: { value: Array.from({ length: 32 }, () => new THREE.Vector4(0, 0, 0, -1000)) },
+  uSim: { value: null },
+  uSimTexel: { value: new THREE.Vector2(1 / 256, 1 / 144) },
+  uWakeGain: { value: 22 },
   uShape: { value: -1 },
   uPrevShape: { value: -1 },
   uPrevT: { value: 0 },
@@ -138,8 +140,78 @@ const settleT = () => SETTLE / click.ts;
 let tc = timeOffset;        // continuous time (camera, shapes, trail)
 let loopClock = timeOffset; // loop time; frozen during a click
 let cpBlend = 0, clickPal = 8, camDs = null, camHs = null, snap = true;
-const trailPts = uniforms.uTrail.value;
-let trailHead = 0, lastPt = null;
+// ---- water wake: 2D wave-equation sim on a small half-float target ----
+const SW = 256, SH = 144, SIM_DT = 1 / 60;
+const simRT = [0, 1].map(() => new THREE.WebGLRenderTarget(SW, SH, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false }));
+let simCur = 0, simAcc = 0, lastPt = null;
+const quadScene = new THREE.Scene();
+const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const quadVert = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+const stepMat = new THREE.ShaderMaterial({
+  uniforms: { uS: { value: null }, uTexel: { value: new THREE.Vector2(1 / SW, 1 / SH) } },
+  vertexShader: quadVert,
+  fragmentShader: `varying vec2 vUv; uniform sampler2D uS; uniform vec2 uTexel;
+    void main(){
+      vec2 s = texture2D(uS, vUv).rg;
+      float l = texture2D(uS, vUv - vec2(uTexel.x,0.)).r, r = texture2D(uS, vUv + vec2(uTexel.x,0.)).r;
+      float d = texture2D(uS, vUv - vec2(0.,uTexel.y)).r, u = texture2D(uS, vUv + vec2(0.,uTexel.y)).r;
+      float lap = l + r + d + u - 4.0*s.r;
+      float e = min(min(vUv.x, 1.0 - vUv.x)*SWf, min(vUv.y, 1.0 - vUv.y)*SHf);
+      float edge = smoothstep(0.0, 8.0, e);
+      float hn = (s.r + (s.r - s.g)*0.992 + 0.17*lap + 0.03*lap) * mix(0.9, 1.0, edge);
+      gl_FragColor = vec4(hn, s.r, 0.0, 1.0);
+    }`.replace('SWf', SW.toFixed(1)).replace('SHf', SH.toFixed(1)),
+  depthTest: false, depthWrite: false,
+});
+const dropMat = new THREE.ShaderMaterial({
+  uniforms: { uA: { value: new THREE.Vector2() }, uB: { value: new THREE.Vector2() }, uAmp: { value: 0 }, uSigma: { value: 3 } },
+  vertexShader: quadVert,
+  fragmentShader: `varying vec2 vUv; uniform vec2 uA, uB; uniform float uAmp, uSigma;
+    void main(){
+      vec2 sz = vec2(SWf, SHf);
+      vec2 p = vUv*sz, a = uA*sz, b = uB*sz;
+      vec2 ab = b - a; float t = clamp(dot(p - a, ab)/max(dot(ab, ab), 1e-4), 0.0, 1.0);
+      float d = length(p - (a + ab*t));
+      float h = uAmp*exp(-d*d/(2.0*uSigma*uSigma)); gl_FragColor = vec4(h, h, 0.0, 0.0);
+    }`.replace(/SWf/g, SW.toFixed(1)).replace(/SHf/g, SH.toFixed(1)),
+  blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+  depthTest: false, depthWrite: false,
+});
+const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), stepMat);
+quad.frustumCulled = false;
+quadScene.add(quad);
+function simPass(mat, target) {
+  const ac = renderer.autoClear; renderer.autoClear = false;
+  quad.material = mat;
+  renderer.setRenderTarget(target); renderer.render(quadScene, quadCam); renderer.setRenderTarget(null);
+  renderer.autoClear = ac;
+}
+function simStep() {
+  const nxt = 1 - simCur;
+  stepMat.uniforms.uS.value = simRT[simCur].texture;
+  simPass(stepMat, simRT[nxt]);
+  simCur = nxt;
+  uniforms.uSim.value = simRT[simCur].texture;
+}
+function simReset() {
+  for (const rt of simRT) { renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 0); renderer.clear(); }
+  renderer.setRenderTarget(null); renderer.setClearColor(0x01020a, 1);
+  uniforms.uSim.value = simRT[simCur].texture;
+}
+// a tiny drop at the cursor, stretched along the move so fast drags leave a continuous line; still cursor = nothing
+function wakeDrop(ev) {
+  const r = renderer.domElement.getBoundingClientRect();
+  const p = new THREE.Vector2((ev.clientX - r.left) / r.width, 1 - (ev.clientY - r.top) / r.height);
+  if (lastPt) {
+    const lenPx = p.distanceTo(lastPt) * SW;
+    const amp = Math.min(0.006 * lenPx, 0.03);
+    if (amp > 0.0005) {
+      dropMat.uniforms.uA.value.copy(lastPt); dropMat.uniforms.uB.value.copy(p); dropMat.uniforms.uAmp.value = amp;
+      simPass(dropMat, simRT[simCur]);
+    }
+  }
+  lastPt = p;
+}
 const ray = new THREE.Raycaster();
 
 function planePoint(ev) {
@@ -150,15 +222,6 @@ function planePoint(ev) {
   const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
   const d = -camera.position.dot(fwd) / ray.ray.direction.dot(fwd);
   return ray.ray.origin.clone().addScaledVector(ray.ray.direction, d);
-}
-function pushTrail(pt) {
-  const n = lastPt ? Math.min(8, Math.max(1, Math.ceil(pt.distanceTo(lastPt) / 0.3))) : 1;
-  for (let i = 1; i <= n; i++) {
-    const q = lastPt ? lastPt.clone().lerp(pt, i / n) : pt;
-    trailPts[trailHead].set(q.x, q.y, q.z, tc);
-    trailHead = (trailHead + 1) % 32;
-  }
-  lastPt = pt;
 }
 function startClick(pt) {
   const T = (tc - click.t0) * click.ts;
@@ -173,11 +236,11 @@ function startClick(pt) {
 }
 const canvasEl = renderer.domElement;
 canvasEl.style.touchAction = 'none';
-canvasEl.addEventListener('pointermove', (ev) => pushTrail(planePoint(ev)));
+canvasEl.addEventListener('pointermove', wakeDrop);
 canvasEl.addEventListener('pointerleave', () => { lastPt = null; });
 canvasEl.addEventListener('pointerdown', (ev) => {
   const pt = planePoint(ev);
-  lastPt = pt; pushTrail(pt);
+  wakeDrop(ev);
   const T = tc - click.t0;
   if (click.phase === 'idle') startClick(pt);
   else if (click.phase === 'active') { if (T >= COOLDOWN) startClick(pt); } // retarget from current positions
@@ -260,11 +323,14 @@ function update(clock) {
   finish.uniforms.uTime.value = clock % 10;
 }
 
+uniforms.uSim.value = simRT[0].texture;
 let dtNow = 1 / 60;
 let last = performance.now();
 function advance(dt) {
   dtNow = dt;
   tc += dt;
+  simAcc = Math.min(simAcc + dt, 0.2);
+  while (simAcc >= SIM_DT) { simStep(); simAcc -= SIM_DT; }
   stepClick();
   if (click.phase === 'idle') loopClock += dt;
   update(loopClock);
@@ -285,10 +351,18 @@ function loop() {
 loop();
 
 // capture hooks
-window.__setClock = (c) => { window.__freeze = true; tc = loopClock = c; snap = true; update(c); composer.render(); };
+window.__setClock = (c) => { window.__freeze = true; tc = loopClock = c; snap = true; simReset(); simAcc = 0; lastPt = null; update(c); composer.render(); };
 window.__advance = (dt, render = true) => { window.__freeze = true; advance(dt); if (render) composer.render(); };
 window.__pointer = (type, x, y) => {
   const ev = { clientX: x, clientY: y };
-  if (type === 'move') pushTrail(planePoint(ev));
+  if (type === 'move') wakeDrop(ev);
   else if (type === 'down') canvasEl.dispatchEvent(Object.assign(new Event('pointerdown'), ev));
+};
+window.__simStat = () => {
+  const buf = new Uint16Array(SW * SH * 4);
+  renderer.readRenderTargetPixels(simRT[simCur], 0, 0, SW, SH, buf);
+  const f = (h) => { const e = (h >> 10) & 31, m = h & 1023, sgn = h >> 15 ? -1 : 1; return e === 0 ? sgn * m * 2 ** -24 : e === 31 ? (m ? NaN : sgn * Infinity) : sgn * (1 + m / 1024) * 2 ** (e - 15); };
+  let mx = 0, nan = 0, nz = 0;
+  for (let i = 0; i < SW * SH; i++) { const v = f(buf[i * 4]); if (Number.isNaN(v)) nan++; else { mx = Math.max(mx, Math.abs(v)); if (Math.abs(v) > 1e-3) nz++; } }
+  return { mx, nan, nz };
 };
