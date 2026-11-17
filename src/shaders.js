@@ -324,12 +324,16 @@ void main() {
     vec3 q = pos - cameraPosition;
     vec3 perp = q - rd*dot(q, rd);
     float dist = length(perp);
-    float s = exp(-dist*dist*5.0) * (1.0 - smoothstep(0.1, 2.5, age)) * (1.0 - exp(-age*12.0));
-    dd += perp/(dist + 0.25)*s;
-    lift = max(lift, s);
+    float R = 0.2 + 1.5*age;
+    float decay = (1.0 - smoothstep(0.3, 2.6, age)) / (1.0 + 1.5*age);
+    float shell = exp(-(dist - R)*(dist - R)/(0.08 + 0.12*age));
+    float core = exp(-dist*dist/0.06) * (1.0 - smoothstep(0.0, 0.35, age));
+    float w = shell*decay*(0.6 + 0.4*cos(age*9.0 - dist*5.0)) + core*0.6;
+    dd += perp/(dist + 0.1)*w*0.5;
+    lift = max(lift, shell*decay + core);
   }
   float dl = length(dd);
-  pos += dd * (3.0*min(dl, 1.0)/max(dl, 1e-4)) + curl(pos*0.8 + r.xyz*2.0, uTimeC)*lift*0.6;
+  pos += dd * (min(dl, 1.2)/max(dl, 1e-4)) + curl(pos*1.3 + r.xyz*2.0, uTimeC*1.5)*lift*0.35;
   xglow += lift*0.5;
 
   float ang = (r.w*TAU + t*(0.25 + r.x*0.7)) * (1.0 - ord) + bump*(3.0 + 6.0*r.y) + lift*(2.0 + 3.0*r.y);
