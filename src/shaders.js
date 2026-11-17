@@ -233,12 +233,31 @@ vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) 
     else p += (r.xyz - 0.5)*jit*2.0;
     p = rotY(t*0.18) * (rotX(0.5) * p);
     ord = 1.0;
-  } else if (id < 11.5) { // sunflower: golden-angle phyllotaxis disc, every cube
-    float rad = 9.0*sqrt((i + 0.5)/uCount);
-    float ang = i*2.399963 + t*0.05;
-    p = vec3(cos(ang)*rad, 0.02*rad*rad + 0.1*sin(rad*1.4 - t*1.2), sin(ang)*rad);
-    p.y -= 0.9;
-    sz = 0.108; ord = 1.0;
+  } else if (id < 11.5) { // dense spiral galaxy: bulge, log-spiral arms, faint haze
+    float u2 = fract(i*0.6180339)*0.985;
+    float rad = min(-log(1.0 - u2)*3.9, 9.8);
+    float cls = r.w;
+    float dd = r.x + r.y - 1.0;
+    float yj = (fract(i*0.7548) - 0.5);
+    if (cls < 0.16) {
+      float rb = min(-log(1.0 - fract(i*0.7548)*0.98)*0.95, 3.2);
+      p = fib(i, uCount) * rb * vec3(1.0, 0.65, 1.0);
+      p = rotY(t*0.6/(0.5 + rb*0.3)) * p;
+      sz = 0.08;
+    } else if (cls < 0.72) {
+      float rr = 0.9 + rad;
+      float arm = floor(r.z*3.0);
+      float th = arm*TAU/3.0 + 3.6*log(rr/0.9) + dd*(1.5/(1.0 + rr*0.1)) - t*0.5/(0.6 + rr*0.25);
+      p = vec3(cos(th)*rr, yj*(0.35*exp(-rr*0.15) + 0.06), sin(th)*rr);
+      sz = 0.1;
+    } else {
+      float rr = 0.5 + rad*1.02;
+      float th = fract(i*0.3247)*TAU - t*0.5/(0.6 + rr*0.25);
+      p = vec3(cos(th)*rr, yj*(0.5*exp(-rr*0.12) + 0.08), sin(th)*rr);
+      sz = 0.065;
+    }
+    p = rotX(0.3) * p;
+    ord = 0.9;
   } else { // breathing block: 25^3 solid cube that opens and closes
     vec3 g = vec3(mod(i, 25.0), mod(floor(i/25.0), 25.0), floor(i/625.0)) - 12.0;
     float ph = t*0.8976 - length(g)*0.025;
@@ -392,10 +411,19 @@ void main() {
   vPulse = max(vPulse, wv*smoothstep(0.5, 2.4, pos.y));
   float isU = ca*step(8.5, uShape)*step(uShape, 9.5);
   ct = mix(ct, smoothstep(0.0, 7.5, length(pos)), isU);
-  float arm = 0.5 + 0.5*sin(mod(aIdx, 13.0)/13.0*TAU);
-  float rn = length(pos.xz)/9.0;
-  ct = mix(ct, clamp(0.1 + 0.55*smoothstep(0.2, 0.8, arm) + 0.3*rn, 0.0, 1.0), sf);
-  vPulse = max(vPulse, sf*pow(0.5 + 0.5*sin(length(pos.xz)*0.9 - t*1.4 + arm*1.2), 6.0)*0.8);
+  {
+    float cl = r.w;
+    float ddv = r.x + r.y - 1.0;
+    float rg = length(pos);
+    float gc;
+    if (cl < 0.16) gc = 0.9 + 0.1*r.z;
+    else if (cl < 0.72) {
+      gc = 0.56 + 0.14*sin(rg*0.7 + r.z*6.0) + 0.3*exp(-rg*0.35) + 0.1*ddv;
+      gc = mix(0.14, gc, smoothstep(-1.1, -0.5, ddv));
+    } else gc = 0.3 + 0.1*r.z + 0.25*exp(-rg*0.4);
+    ct = mix(ct, clamp(gc, 0.0, 1.0), sf);
+    vPulse = max(vPulse, sf*step(cl, 0.72)*step(0.16, cl)*pow(0.5 + 0.5*sin(rg*0.8 - t*1.3), 8.0)*0.7);
+  }
   float bw = 0.5 + 0.5*sin(length(pos)*0.9 - t*1.1);
   ct = mix(ct, clamp(0.28 + 0.62*bw*bw + (r.y - 0.5)*0.12, 0.0, 1.0), bk);
   vPulse = max(vPulse, bk*pow(bw, 5.0));

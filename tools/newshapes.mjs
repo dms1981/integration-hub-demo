@@ -13,18 +13,18 @@ await page.waitForFunction(() => window.__setClock, null, { timeout: 60000 });
 const adv = (dt, r = false) => page.evaluate(([d, rr]) => window.__advance(d, rr), [dt, r]);
 const shot = async (n) => { await adv(0, true); await page.screenshot({ path: `${out}/${n}.png` }); console.log('shot', n); };
 const at = async (c, n) => { await page.evaluate((x) => window.__setClock(x), c); await adv(0.05); await shot(n); };
-await at(52, 'loop-sunflower');
+await at(49, 'loop-galaxy2');
 await at(126, 'loop-block-contracted');
 await at(122.5, 'loop-block-expanded');
-await at(44, 'loop-trans-into-sunflower');
+await at(44, 'loop-trans-into-galaxy2');
 await at(112, 'loop-trans-into-block');
 // click chain: 4th click -> sunflower, 5th -> block
 await page.evaluate((x) => window.__setClock(x), 20);
 for (let n = 1; n <= 5; n++) {
   await page.mouse.click(640, 360);
-  await adv(2.5); if (n === 4) await shot('click-sunflower-reform');
+  await adv(2.5); if (n === 4) await shot('click-galaxy2-reform');
   await adv(4.7);
-  if (n >= 4) await shot('click-' + (n === 4 ? 'sunflower' : 'block'));
+  if (n >= 4) await shot('click-' + (n === 4 ? 'galaxy2' : 'block'));
   if (n === 5) { await adv(1.75); await shot('click-block-expanded'); }
   await adv(22);
 }
