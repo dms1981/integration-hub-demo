@@ -43,7 +43,7 @@ const PALETTES = [
   ['#12063a', '#4a1fd8', '#8f52ff', '#c9a8ff', '#ffb020'],
   ['#02262e', '#0a9fb4', '#35e8d8', '#b8fff4', '#ff2f8e'],
   ['#30040f', '#c0102c', '#ff4a38', '#ffb08a', '#35e0ff'],
-  ['#042a1e', '#0e9c68', '#4cf0a0', '#b4ffd8', '#b04cff'],
+  ['#06402e', '#14c283', '#5cffb0', '#c4ffe4', '#b04cff'],
   ['#4a0f78', '#ff3fd0', '#3fd0ff', '#ffffff', '#ffd060'],
   ['#030a38', '#1050e0', '#20c8ff', '#ff7a30', '#ff4a20'],
   ['#2a0540', '#e0207a', '#ff7a30', '#ffd060', '#40e8ff'],
@@ -53,8 +53,9 @@ const PALETTES = [
 // shader formation ids: 0 sphere, 1 knot, 2 helix, 3 lattice, 4 galaxy, 5 wave, 6 ribbons, 7 rain
 const ORDER = [0, 1, 7, 2, 3, 4, 5, 6];
 const FORM_PAL = [0, 1, 2, 3, 4, 5, 6, 7];
-const FORM_CAM = [15.5, 17, 21, 26, 18, 22, 18, 27];
-const FORM_HEIGHT = [2.5, 2, 1, 3, 15, 8, 8, 3];
+const FORM_CAM = [15.5, 17, 21, 36, 18, 22, 18, 27];
+const FORM_HEIGHT = [2.5, 2, 1, 11, 15, 8, 8, 3];
+const FLOOR_BY = [-8, -8, -8, -9, -4.5, -4.5, -6, -6.5];
 const HOLD = 9, TRANS = 6, CYCLE = HOLD + TRANS;
 
 const FLOOR_Y = -8.5;
@@ -89,7 +90,7 @@ const mirror = new THREE.Mesh(geo, mirrorMat);
 mirror.frustumCulled = false;
 scene.add(mirror);
 
-const floorU = { uColor: { value: new THREE.Color() }, uGain: { value: 0.25 } };
+const floorU = { uColor: { value: new THREE.Color() }, uGain: { value: 0.4 } };
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(80, 80),
   new THREE.ShaderMaterial({ uniforms: floorU, vertexShader: floorShader.vertex, fragmentShader: floorShader.fragment, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }),
@@ -142,6 +143,9 @@ function update(clock) {
   uniforms.uLc1.value.copy(P[2]);
 
   const e = ss(0, 1, mix);
+  const fy = THREE.MathUtils.lerp(FLOOR_BY[f], FLOOR_BY[tf], e);
+  uniforms.uFloor.value = fy;
+  floor.position.y = fy;
   const camD = THREE.MathUtils.lerp(FORM_CAM[f], FORM_CAM[tf], e);
   const camH = THREE.MathUtils.lerp(FORM_HEIGHT[f], FORM_HEIGHT[tf], e);
   const dist = camD + Math.sin(clock * 0.21) * 1.2;

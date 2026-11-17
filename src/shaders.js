@@ -66,7 +66,7 @@ vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) 
     float y = 1.0 - 2.0*(i + 0.5)/uCount;
     float rad = sqrt(max(1.0 - y*y, 0.0));
     float th = i * 2.399963;
-    float R = 4.9 + 0.2*sin(acos(y)*9.0 - t*1.8) + 0.06*sin(th*0.0 + t);
+    float R = 4.9 + 0.04*sin(acos(y)*9.0 - t*1.8);
     p = vec3(cos(th)*rad, y, sin(th)*rad) * R;
     sz = 0.085; ord = 1.0;
   } else if (id < 1.5) { // torus knot
@@ -103,11 +103,21 @@ vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) 
     float ix = mod(i, 25.0);
     float iy = mod(floor(i/25.0), 25.0);
     float iz = floor(i/625.0);
-    p = (vec3(ix, iy, iz) - 12.0) * 0.52;
-    p *= 1.0 + 0.12*sin(length(p)*1.1 - t*1.4);
-    p += 0.22*sin(p.yzx*1.2 + t*0.9);
-    p = rotY(p.y*0.045*sin(t*0.3) + t*0.12) * p;
-    sz = 0.24; ord = 1.0;
+    vec3 gi = vec3(ix, iy, iz);
+    p = (gi - 12.0) * 0.6;
+    // whole slices slide out and back, one axis at a time, staggered
+    float seg = t*0.3;
+    float k = floor(seg);
+    float f = fract(seg);
+    float ax = mod(k, 3.0);
+    float sl = ax < 0.5 ? ix : (ax < 1.5 ? iy : iz);
+    float es = clamp((f - sl/24.0*0.45)/0.5, 0.0, 1.0);
+    es = es*es*(3.0 - 2.0*es);
+    float sgn = mod(sl, 2.0)*2.0 - 1.0;
+    vec3 dirv = ax < 0.5 ? vec3(0.0,0.0,1.0) : (ax < 1.5 ? vec3(1.0,0.0,0.0) : vec3(0.0,1.0,0.0));
+    p += dirv * sgn * sin(PI*es) * 3.0;
+    p = rotY(t*0.08) * p;
+    sz = 0.2; ord = 1.0;
   } else if (id < 4.5) { // galaxy vortex
     float arm = floor(r.z*4.0);
     float rr = 0.25 + pow(fract(i*0.618034), 0.72)*9.6;
@@ -175,7 +185,8 @@ void main() {
 
   float cur = e < 0.5 ? uFrom : uTo;
   float latt = step(2.5, cur)*step(cur, 3.5);
-  float big = step(0.972, fract(r.w*7.13 + r.y*3.1)) * (1.0 - latt);
+  float sph = step(cur, 0.5);
+  float big = step(0.972, fract(r.w*7.13 + r.y*3.1)) * (1.0 - latt) * (1.0 - sph);
   float sz = mix(szA, szB, e) * mix(0.55 + 0.75*r.z*r.z, 0.95, latt) * (1.0 + big*1.7);
   float ord = mix(ordA, ordB, e) * (1.0 - bump);
 
@@ -185,7 +196,7 @@ void main() {
 
   float pulse = 0.5 + 0.5*sin(dot(pos, normalize(vec3(0.6,0.3,0.7)))*0.55 - t*1.6 + r.x*0.8);
   pulse = pow(pulse, 6.0);
-  sz *= 1.0 + 0.55*pulse + 0.5*bump;
+  sz *= 1.0 + (0.55 - 0.45*sph)*pulse + 0.5*bump;
 
   vec3 world = pos + R * (position * sz);
   vec3 nrm = R * normal;
@@ -202,6 +213,10 @@ void main() {
 
   float ct = 0.4 + pos.y*0.045 + 0.34*sin(length(pos.xz)*0.33 - t*0.16 + r.x*0.5) + (r.y - 0.5)*0.22;
   ct += 0.18*bump*sin(r.w*6.0);
+  float lat = acos(clamp(pos.y/max(length(pos), 0.001), -1.0, 1.0));
+  float band = pow(0.5 + 0.5*sin(lat*9.0 - t*1.8), 3.0);
+  vPulse = max(vPulse, sph*band);
+  ct = clamp(ct + sph*(band*0.35 - 0.1), 0.0, 1.0);
   ct = mix(ct, clamp(0.55 + pos.x*0.04 + pos.y*0.05 + 0.3*sin(length(pos)*0.5 - t*0.8), 0.0, 1.0), latt);
   ct = mix(ct, smoothstep(-2.8, 2.2, pos.y) , wv);
   vPulse = max(vPulse, wv*smoothstep(0.5, 2.4, pos.y));
@@ -263,7 +278,7 @@ void main() {
   lit += bright * edge * (0.26 + 0.9*vPulse + 0.7*vGlow + 1.2*vSpark + 0.5*vBig);
   lit += bright * vPulse * 0.12;
 
-  if (uMirror > 0.5) lit *= 0.28 * exp(-abs(vWorld.y - uFloor)*0.22);
+  if (uMirror > 0.5) lit *= 0.6 * exp(-abs(vWorld.y - uFloor)*0.16);
   float fog = exp(-max(dist - 10.0, 0.0)*0.045);
   vec3 fogCol = vec3(0.004, 0.006, 0.02);
   lit = mix(fogCol, lit, fog);
