@@ -13,7 +13,7 @@ npm run dev        # http://localhost:5173
 npm run build && npm run preview
 ```
 
-Optional `?t=<seconds>` starts the piece at a later point in its 150 s loop.
+Optional `?t=<seconds>` starts the piece at a later point in its 200 s loop.
 
 ## Capture (dev only)
 

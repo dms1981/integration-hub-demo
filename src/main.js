@@ -59,9 +59,9 @@ const PALETTES = [
 const ORDER = [0, 1, 7, 11, 2, 3, 4, 5, 12, 6];
 const FORM_PAL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const FORM_CAM = [15.5, 17, 21, 36, 18, 22, 18, 27, 19, 20, 21, 17, 25];
-const FORM_HEIGHT = [2.5, 2, 1, 11, 15, 8, 8, 3, 3, 3, 6, 16, 9];
+const FORM_HEIGHT = [2.5, 2, 1, 11, 15, 8, 8, 3, 3, 3, 6, 19, 9];
 const FLOOR_BY = [-8, -8, -8, -9, -4.5, -4.5, -6, -6.5, -8, -8, -8, -6, -7.5];
-const HOLD = 9, TRANS = 6, CYCLE = HOLD + TRANS;
+const HOLD = 14, TRANS = 6, CYCLE = HOLD + TRANS;
 
 const FLOOR_Y = -8.5;
 const uniforms = {

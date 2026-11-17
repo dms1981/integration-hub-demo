@@ -13,11 +13,11 @@ await page.waitForFunction(() => window.__setClock, null, { timeout: 60000 });
 const adv = (dt, r = false) => page.evaluate(([d, rr]) => window.__advance(d, rr), [dt, r]);
 const shot = async (n) => { await adv(0, true); await page.screenshot({ path: `${out}/${n}.png` }); console.log('shot', n); };
 const at = async (c, n) => { await page.evaluate((x) => window.__setClock(x), c); await adv(0.05); await shot(n); };
-await at(49, 'loop-galaxy2');
-await at(126, 'loop-block-contracted');
-await at(122.5, 'loop-block-expanded');
-await at(44, 'loop-trans-into-galaxy2');
-await at(112, 'loop-trans-into-block');
+await page.evaluate(() => window.__setClock(66)); for (let k = 0; k < 14; k++) await adv(0.5); await shot('loop-galaxy2');
+await at(173, 'loop-block-contracted');
+await at(169.5, 'loop-block-expanded');
+await at(58, 'loop-trans-into-galaxy2');
+await at(155, 'loop-trans-into-block');
 // click chain: 4th click -> sunflower, 5th -> block
 await page.evaluate((x) => window.__setClock(x), 20);
 for (let n = 1; n <= 5; n++) {

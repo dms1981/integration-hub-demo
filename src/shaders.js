@@ -233,30 +233,31 @@ vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) 
     else p += (r.xyz - 0.5)*jit*2.0;
     p = rotY(t*0.18) * (rotX(0.5) * p);
     ord = 1.0;
-  } else if (id < 11.5) { // dense spiral galaxy: bulge, log-spiral arms, faint haze
-    float u2 = fract(i*0.6180339)*0.985;
-    float rad = min(-log(1.0 - u2)*3.9, 9.8);
+  } else if (id < 11.5) { // dense spiral galaxy: bulge, two log-spiral arms (~1 turn), faint haze
+    float u2 = fract(i*0.6180339)*0.93;
+    float rad = -log(1.0 - u2)*3.6;
     float cls = r.w;
     float dd = r.x + r.y - 1.0;
     float yj = (fract(i*0.7548) - 0.5);
-    if (cls < 0.16) {
-      float rb = min(-log(1.0 - fract(i*0.7548)*0.98)*0.95, 3.2);
-      p = fib(i, uCount) * rb * vec3(1.0, 0.65, 1.0);
-      p = rotY(t*0.6/(0.5 + rb*0.3)) * p;
-      sz = 0.08;
-    } else if (cls < 0.72) {
-      float rr = 0.9 + rad;
-      float arm = floor(r.z*3.0);
-      float th = arm*TAU/3.0 + 3.6*log(rr/0.9) + dd*(1.5/(1.0 + rr*0.1)) - t*0.5/(0.6 + rr*0.25);
-      p = vec3(cos(th)*rr, yj*(0.35*exp(-rr*0.15) + 0.06), sin(th)*rr);
-      sz = 0.1;
+    float spin = t*0.12;
+    if (cls < 0.2) {
+      float rb = -log(1.0 - fract(i*0.7548)*0.95)*1.5;
+      p = fib(i, uCount) * rb * vec3(1.0, 0.7, 1.0);
+      p = rotY(spin*2.0) * p;
+      sz = 0.085;
+    } else if (cls < 0.68) {
+      float rr = 1.3 + rad*0.95;
+      float arm = floor(r.z*2.0);
+      float th = arm*PI + 2.9*log(rr/1.3) + dd*(0.16 + 0.05*rr/(1.0 + rr*0.1)) + spin + 0.04*sin(t*0.4 - rr*0.5)*rr*0.1;
+      p = vec3(cos(th)*rr, yj*(0.3*exp(-rr*0.15) + 0.05), sin(th)*rr);
+      sz = 0.13;
     } else {
-      float rr = 0.5 + rad*1.02;
-      float th = fract(i*0.3247)*TAU - t*0.5/(0.6 + rr*0.25);
-      p = vec3(cos(th)*rr, yj*(0.5*exp(-rr*0.12) + 0.08), sin(th)*rr);
-      sz = 0.065;
+      float rr = 0.6 + rad;
+      float th = fract(i*0.3247)*TAU + spin;
+      p = vec3(cos(th)*rr, yj*(0.45*exp(-rr*0.12) + 0.07), sin(th)*rr);
+      sz = 0.045;
     }
-    p = rotX(0.3) * p;
+    p = rotX(0.2) * p;
     ord = 0.9;
   } else { // breathing block: 25^3 solid cube that opens and closes
     vec3 g = vec3(mod(i, 25.0), mod(floor(i/25.0), 25.0), floor(i/625.0)) - 12.0;
@@ -416,13 +417,14 @@ void main() {
     float ddv = r.x + r.y - 1.0;
     float rg = length(pos);
     float gc;
-    if (cl < 0.16) gc = 0.9 + 0.1*r.z;
-    else if (cl < 0.72) {
+    if (cl < 0.2) gc = 0.9 + 0.1*r.z;
+    else if (cl < 0.68) {
       gc = 0.56 + 0.14*sin(rg*0.7 + r.z*6.0) + 0.3*exp(-rg*0.35) + 0.1*ddv;
       gc = mix(0.14, gc, smoothstep(-1.1, -0.5, ddv));
-    } else gc = 0.3 + 0.1*r.z + 0.25*exp(-rg*0.4);
+      gc = max(gc, 0.62);
+    } else gc = 0.12 + 0.08*r.z;
     ct = mix(ct, clamp(gc, 0.0, 1.0), sf);
-    vPulse = max(vPulse, sf*step(cl, 0.72)*step(0.16, cl)*pow(0.5 + 0.5*sin(rg*0.8 - t*1.3), 8.0)*0.7);
+    vPulse = max(vPulse, sf*step(cl, 0.68)*step(0.2, cl)*pow(0.5 + 0.5*sin(rg*0.8 - t*1.3), 8.0)*0.7);
   }
   float bw = 0.5 + 0.5*sin(length(pos)*0.9 - t*1.1);
   ct = mix(ct, clamp(0.28 + 0.62*bw*bw + (r.y - 0.5)*0.12, 0.0, 1.0), bk);
