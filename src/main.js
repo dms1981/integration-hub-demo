@@ -51,14 +51,16 @@ const PALETTES = [
   ['#021a3a', '#1a6cff', '#5ce1ff', '#e8fbff', '#ff4a8a'],
   ['#2a0420', '#d81e5a', '#ff6a3a', '#ffe0a0', '#30e0ff'],
   ['#041a14', '#12c79a', '#8affd0', '#f0fff8', '#ff8a1e'],
+  ['#2a0a02', '#e0620a', '#ffb81c', '#fff0b0', '#6a3cff'],
+  ['#050c3a', '#2850ff', '#38d4ff', '#eaf6ff', '#ff3a7a'],
 ].map((p) => p.map((c) => new THREE.Color(c)));
 
 // shader formation ids: 0 sphere, 1 knot, 2 helix, 3 lattice, 4 galaxy, 5 wave, 6 ribbons, 7 rain
-const ORDER = [0, 1, 7, 2, 3, 4, 5, 6];
-const FORM_PAL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-const FORM_CAM = [15.5, 17, 21, 36, 18, 22, 18, 27, 19, 20, 21];
-const FORM_HEIGHT = [2.5, 2, 1, 11, 15, 8, 8, 3, 3, 3, 6];
-const FLOOR_BY = [-8, -8, -8, -9, -4.5, -4.5, -6, -6.5, -8, -8, -8];
+const ORDER = [0, 1, 7, 11, 2, 3, 4, 5, 12, 6];
+const FORM_PAL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+const FORM_CAM = [15.5, 17, 21, 36, 18, 22, 18, 27, 19, 20, 21, 19, 25];
+const FORM_HEIGHT = [2.5, 2, 1, 11, 15, 8, 8, 3, 3, 3, 6, 14, 9];
+const FLOOR_BY = [-8, -8, -8, -9, -4.5, -4.5, -6, -6.5, -8, -8, -8, -4.5, -7.5];
 const HOLD = 9, TRANS = 6, CYCLE = HOLD + TRANS;
 
 const FLOOR_Y = -8.5;
@@ -133,7 +135,7 @@ addEventListener('resize', () => {
 const ss = (a, b, x) => { x = Math.min(Math.max((x - a) / (b - a), 0), 1); return x * x * (3 - 2 * x); };
 
 // ---- interaction state ----
-const SHAPES = [8, 9, 10];
+const SHAPES = [8, 9, 10, 11, 12];
 const SETTLE = 5.6, HOLD_CLICK = 6.5, REL = 2.4, COOLDOWN = 0.6, RETARGET_TS = 1.7;
 const click = { phase: 'idle', shape: -1, prev: -1, prevT: 0, prevPt: null, ts: 1, amp: 1, t0: 0, rel0: 0, n: 0, pending: null };
 const settleT = () => SETTLE / click.ts;

@@ -218,7 +218,7 @@ vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) 
     }
     p = rotY(t*0.15) * (rotX(0.4*sin(t*0.2)) * p);
     ord = 1.0;
-  } else { // moebius band: three rails, sparse twisted rungs, faint dust
+  } else if (id < 10.5) { // moebius band: three rails, sparse twisted rungs, faint dust
     float g = fract(i*0.6180339);
     float a, v, jit = 0.0;
     float cls = r.w;
@@ -233,6 +233,19 @@ vec3 formation(float id, float i, vec4 r, float t, out float sz, out float ord) 
     else p += (r.xyz - 0.5)*jit*2.0;
     p = rotY(t*0.18) * (rotX(0.5) * p);
     ord = 1.0;
+  } else if (id < 11.5) { // sunflower: golden-angle phyllotaxis disc, every cube
+    float rad = 9.0*sqrt((i + 0.5)/uCount);
+    float ang = i*2.399963 + t*0.05;
+    p = vec3(cos(ang)*rad, 0.02*rad*rad + 0.1*sin(rad*1.4 - t*1.2), sin(ang)*rad);
+    p.y -= 0.9;
+    sz = 0.108; ord = 1.0;
+  } else { // breathing block: 25^3 solid cube that opens and closes
+    vec3 g = vec3(mod(i, 25.0), mod(floor(i/25.0), 25.0), floor(i/625.0)) - 12.0;
+    float ph = t*0.8976 - length(g)*0.025;
+    float br = 1.0 + 0.5*(0.5 - 0.5*cos(ph));
+    p = g*0.36*br;
+    p = rotY(t*0.12) * (rotX(0.35) * p);
+    sz = 0.345; ord = 1.0;
   }
   return p;
 }
@@ -285,11 +298,15 @@ void main() {
   float ca = (uShape > -0.5 && uRelT < 0.0) ? 1.0 : 0.0;
   float latt = step(2.5, cur)*step(cur, 3.5)*(1.0 - ca);
   float sph = step(cur, 0.5)*(1.0 - ca);
-  float big = step(0.972, fract(r.w*7.13 + r.y*3.1)) * (1.0 - latt) * (1.0 - sph);
-  float sz = mix(szA, szB, e) * mix(0.55 + 0.75*r.z*r.z, 0.95, latt) * (1.0 + big*1.7);
+  float sid = ca > 0.5 ? uShape : cur;
+  float bk = step(11.5, sid)*step(sid, 12.5);
+  float sf = step(10.5, sid)*step(sid, 11.5);
+  float uni = max(latt, bk);
+  float big = step(0.972, fract(r.w*7.13 + r.y*3.1)) * (1.0 - uni) * (1.0 - sph) * (1.0 - sf);
+  float sz = mix(szA, szB, e) * mix(0.55 + 0.75*r.z*r.z, 0.95, uni) * (1.0 + big*1.7);
   float ord = mix(ordA, ordB, e) * (1.0 - bump);
   float xglow = 0.0;
-  float varS = (0.55 + 0.75*r.z*r.z) * (1.0 + big*1.7);
+  float varS = mix(0.55 + 0.75*r.z*r.z, 0.95, uni) * (1.0 + big*1.7);
 
   if (uShape > -0.5) {
     float szS, ordS;
@@ -375,6 +392,13 @@ void main() {
   vPulse = max(vPulse, wv*smoothstep(0.5, 2.4, pos.y));
   float isU = ca*step(8.5, uShape)*step(uShape, 9.5);
   ct = mix(ct, smoothstep(0.0, 7.5, length(pos)), isU);
+  float arm = 0.5 + 0.5*sin(mod(aIdx, 13.0)/13.0*TAU);
+  float rn = length(pos.xz)/9.0;
+  ct = mix(ct, clamp(0.1 + 0.55*smoothstep(0.2, 0.8, arm) + 0.3*rn, 0.0, 1.0), sf);
+  vPulse = max(vPulse, sf*pow(0.5 + 0.5*sin(length(pos.xz)*0.9 - t*1.4 + arm*1.2), 6.0)*0.8);
+  float bw = 0.5 + 0.5*sin(length(pos)*0.9 - t*1.1);
+  ct = mix(ct, clamp(0.28 + 0.62*bw*bw + (r.y - 0.5)*0.12, 0.0, 1.0), bk);
+  vPulse = max(vPulse, bk*pow(bw, 5.0));
   vCt = clamp(ct, 0.0, 1.0);
 
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
