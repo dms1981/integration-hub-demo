@@ -4,7 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
-import { vertexShader, fragmentShader, finishShader } from './shaders.js';
+import { vertexShader, fragmentShader, finishShader, floorShader } from './shaders.js';
 
 const COUNT = 25 * 25 * 25; // 15,625 cubes
 const params = new URLSearchParams(location.search);
@@ -38,21 +38,26 @@ geo.setAttribute('aIdx', new THREE.InstancedBufferAttribute(idx, 1));
 geo.instanceCount = COUNT;
 
 // palettes: dark -> mid -> bright -> hot highlight
+// deep base hue -> base -> bright -> glow, plus a vivid complementary accent for sparks
 const PALETTES = [
-  ['#3b1fb0', '#e0239a', '#ff7a2f', '#ffe3a0'], // dusk
-  ['#0a3a9a', '#10b0d0', '#6af0d0', '#effffa'], // glacier
-  ['#7a0c30', '#ff3a3a', '#ffa020', '#fff0c0'], // solar
-  ['#2a3ad0', '#9a4cff', '#2ee6a6', '#eafff2'], // aurora
-  ['#4a0f78', '#ff3fd0', '#3fd0ff', '#ffffff'], // orchid
+  ['#12063a', '#4a1fd8', '#8f52ff', '#c9a8ff', '#ffb020'],
+  ['#02262e', '#0a9fb4', '#35e8d8', '#b8fff4', '#ff2f8e'],
+  ['#30040f', '#c0102c', '#ff4a38', '#ffb08a', '#35e0ff'],
+  ['#042a1e', '#0e9c68', '#4cf0a0', '#b4ffd8', '#b04cff'],
+  ['#4a0f78', '#ff3fd0', '#3fd0ff', '#ffffff', '#ffd060'],
+  ['#030a38', '#1050e0', '#20c8ff', '#ff7a30', '#ff4a20'],
+  ['#2a0540', '#e0207a', '#ff7a30', '#ffd060', '#40e8ff'],
+  ['#2c0e04', '#d84a14', '#ffa828', '#fff0a0', '#3a9cff'],
 ].map((p) => p.map((c) => new THREE.Color(c)));
 
 // shader formation ids: 0 sphere, 1 knot, 2 helix, 3 lattice, 4 galaxy, 5 wave, 6 ribbons, 7 rain
 const ORDER = [0, 1, 7, 2, 3, 4, 5, 6];
-const FORM_PAL = [0, 1, 2, 3, 4, 1, 4, 2];
+const FORM_PAL = [0, 1, 2, 3, 4, 5, 6, 7];
 const FORM_CAM = [15.5, 17, 21, 26, 18, 22, 18, 27];
 const FORM_HEIGHT = [2.5, 2, 1, 3, 15, 8, 8, 3];
 const HOLD = 9, TRANS = 6, CYCLE = HOLD + TRANS;
 
+const FLOOR_Y = -8.5;
 const uniforms = {
   uTime: { value: 0 },
   uMix: { value: 0 },
@@ -60,7 +65,11 @@ const uniforms = {
   uTo: { value: 0 },
   uStyle: { value: 0 },
   uCount: { value: COUNT },
-  uPal: { value: PALETTES[0].map((c) => c.clone()) },
+  uLock: { value: 99 },
+  uMirror: { value: 0 },
+  uFloor: { value: FLOOR_Y },
+  uAccent: { value: new THREE.Color() },
+  uPal: { value: PALETTES[0].slice(0, 4).map((c) => c.clone()) },
   uL0: { value: new THREE.Vector3() },
   uL1: { value: new THREE.Vector3() },
   uLc0: { value: new THREE.Color() },
@@ -70,6 +79,24 @@ const mat = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader })
 const mesh = new THREE.Mesh(geo, mat);
 mesh.frustumCulled = false;
 scene.add(mesh);
+
+// fake floor reflection: same instanced mesh, mirrored about the floor in the shader
+const mirrorMat = new THREE.ShaderMaterial({
+  uniforms: { ...uniforms, uMirror: { value: 1 } },
+  vertexShader, fragmentShader, side: THREE.DoubleSide,
+});
+const mirror = new THREE.Mesh(geo, mirrorMat);
+mirror.frustumCulled = false;
+scene.add(mirror);
+
+const floorU = { uColor: { value: new THREE.Color() }, uGain: { value: 0.25 } };
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(80, 80),
+  new THREE.ShaderMaterial({ uniforms: floorU, vertexShader: floorShader.vertex, fragmentShader: floorShader.fragment, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }),
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = FLOOR_Y;
+scene.add(floor);
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
@@ -104,7 +131,10 @@ function update(clock) {
   const pm = ss(0.1, 0.95, mix);
   const pa = PALETTES[FORM_PAL[f]], pb = PALETTES[FORM_PAL[tf]];
   for (let i = 0; i < 4; i++) uniforms.uPal.value[i].copy(pa[i]).lerp(pb[i], pm);
+  uniforms.uAccent.value.copy(PALETTES[FORM_PAL[f]][4]).lerp(PALETTES[FORM_PAL[tf]][4], pm);
+  uniforms.uLock.value = inTrans ? 99 : local;
   const P = uniforms.uPal.value;
+  floorU.uColor.value.copy(P[1]);
 
   uniforms.uL0.value.set(Math.sin(clock * 0.37) * 6, Math.cos(clock * 0.29) * 3.5, Math.cos(clock * 0.37) * 6);
   uniforms.uL1.value.set(Math.cos(clock * 0.23 + 2) * 5, Math.sin(clock * 0.31 + 1) * 4, Math.sin(clock * 0.27 + 4) * 5);
