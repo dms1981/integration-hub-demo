@@ -1,0 +1,110 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Wake input regression</title>
+<div id="gallery"></div>
+<div id="unavailable" hidden></div>
+<pre id="result">Running...</pre>
+<script type="module">
+  const result = document.querySelector('#result');
+  try {
+    let id = 0, time = 0, callbacks = new Map();
+    window.requestAnimationFrame = (callback) => { callbacks.set(++id, callback); return id; };
+    window.cancelAnimationFrame = (key) => callbacks.delete(key);
+    function advance(count = 1) {
+      for (let i = 0; i < count; i++) {
+        time += 100;
+        const batch = [...callbacks.values()];
+        callbacks.clear();
+        for (const callback of batch) callback(time);
+      }
+    }
+
+    const gl = WebGL2RenderingContext.prototype;
+    const names = new WeakMap();
+    const locate = gl.getUniformLocation, integer = gl.uniform1i, vector = gl.uniform4fv, pair = gl.uniform2fv, vec3 = gl.uniform3f;
+    let count = 0, wake = [], wakeData = [], tip = [];
+    gl.getUniformLocation = function(program, name) {
+      const location = locate.call(this, program, name);
+      if (location) names.set(location, name);
+      return location;
+    };
+    gl.uniform1i = function(location, value) {
+      if (names.get(location) === 'uWakeCount') count = value;
+      return integer.call(this, location, value);
+    };
+    gl.uniform4fv = function(location, value, ...rest) {
+      if (names.get(location) === 'uWake[0]') wake = Array.from(value);
+      return vector.call(this, location, value, ...rest);
+    };
+    gl.uniform2fv = function(location, value, ...rest) {
+      if (names.get(location) === 'uWakeData[0]') wakeData = Array.from(value);
+      return pair.call(this, location, value, ...rest);
+    };
+    gl.uniform3f = function(location, x, y, z) {
+      if (names.get(location) === 'uTip') tip = [x, y, z];
+      return vec3.call(this, location, x, y, z);
+    };
+
+    const { WAKE_COUNT } = await import('../src/shaders.js');
+    await import('../src/main.js');
+    const canvas = document.querySelector('canvas');
+    if (!canvas) throw new Error('WebGL 2 is unavailable');
+    const rect = canvas.getBoundingClientRect();
+    function pointer(type, fraction) {
+      canvas.dispatchEvent(new PointerEvent(type, {
+        pointerType: 'mouse', clientX: rect.left + rect.width * fraction,
+        clientY: rect.top + rect.height / 2,
+      }));
+    }
+    advance();
+    pointer('pointermove', 0.1);
+    for (let i = 1; i <= 16; i++) {
+      pointer('pointermove', 0.1 + 0.8 * i / 16);
+      advance();
+    }
+    const oldCount = count;
+    const oldest = [wake[0], wake[1], wake[3]];
+    pointer('pointerleave', 1.01);
+    advance();
+    pointer('pointermove', 0.02);
+    advance();
+    const noBridge = count === oldCount;
+    pointer('pointermove', 0.1);
+    advance();
+    const oldRetained = count > oldCount && oldest.every((value, i) => value === [wake[0], wake[1], wake[3]][i]);
+    advance(50);
+    const beforeFlick = count;
+    pointer('pointermove', 0.8);
+    advance();
+    const added = count - beforeFlick;
+    const fresh = added > 0 && Array.from({ length: added }, (_, i) => wake[(beforeFlick + i) * 4 + 2]).every((age) => age <= 0.21);
+    const ordered = Array.from({ length: count - 1 }, (_, i) => wake[i * 4 + 2] >= wake[(i + 1) * 4 + 2]).every(Boolean);
+
+    for (let i = 0; i < 10; i++) pointer('pointermove', i % 2 ? 0.1 : 0.9);
+    advance();
+    const firstFade = wakeData[1];
+    const noEviction = count === WAKE_COUNT && oldest.every((value, i) => value === [wake[0], wake[1], wake[3]][i]) && firstFade > 0;
+    const latestTip = Math.abs(tip[0] - (-0.8)) < 0.00001 && tip[2] === 1;
+    advance(9);
+    const fading = wakeData[1] > 0 && wakeData[1] < firstFade;
+    advance(3);
+    const retired = count < WAKE_COUNT;
+    const checks = {
+      'leave and far re-entry do not bridge': noBridge,
+      'earlier wake survives re-entry': oldRetained,
+      'new wake after idle is fresh': fresh,
+      'sample ages remain monotonic': ordered,
+      'latest contact is full strength with a full wake': latestTip,
+      'capacity does not abruptly evict': noEviction,
+      'capacity retirement fades gradually': fading && retired,
+      'no WebGL errors': canvas.getContext('webgl2').getError() === 0,
+    };
+    const failures = Object.entries(checks).filter(([, passed]) => !passed).map(([name]) => name);
+    if (failures.length) throw new Error(`Failed: ${failures.join(', ')}`);
+    result.textContent = `PASS\n${Object.keys(checks).join('\n')}`;
+    result.dataset.status = 'pass';
+  } catch (error) {
+    result.textContent = `FAIL\n${error.stack || error.message}`;
+    result.dataset.status = 'fail';
+  }
+</script>

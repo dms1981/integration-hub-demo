@@ -1,0 +1,139 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Ripple GPU regression</title>
+<pre id="result">Running...</pre>
+<script type="module">
+  import { WAKE_COUNT, WAKE_LIFETIME, rippleField } from '../src/shaders.js';
+
+  const result = document.querySelector('#result');
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    if (!gl) throw new Error('WebGL 2 is unavailable');
+
+    function compile(type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
+      return shader;
+    }
+
+    const vertex = `#version 300 es
+      precision highp float;
+      uniform mat4 projectionMatrix, viewMatrix;
+      uniform float uAspect;
+      uniform int uWakeCount;
+      uniform vec4 uWake[${WAKE_COUNT}], uTestSeed;
+      uniform vec2 uWakeData[${WAKE_COUNT}];
+      uniform vec3 uTip;
+      in vec3 center;
+      out vec3 offset;
+      ${rippleField}
+      void main() {
+        offset = rippleOffset(center, uTestSeed);
+        gl_Position = vec4(center, 1.0);
+      }`;
+    const fragment = `#version 300 es
+      precision highp float;
+      out vec4 color;
+      void main() { color = vec4(0.0); }`;
+    const program = gl.createProgram();
+    gl.attachShader(program, compile(gl.VERTEX_SHADER, vertex));
+    gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragment));
+    gl.transformFeedbackVaryings(program, ['offset'], gl.INTERLEAVED_ATTRIBS);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+    gl.useProgram(program);
+
+    const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    gl.uniformMatrix4fv(gl.getUniformLocation(program, 'projectionMatrix'), false, identity);
+    gl.uniformMatrix4fv(gl.getUniformLocation(program, 'viewMatrix'), false, identity);
+    gl.uniform1f(gl.getUniformLocation(program, 'uAspect'), 1);
+    const input = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, input);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0.12, 0, 0, 0.42, 0, 0, 0.65, 0]), gl.STATIC_DRAW);
+    const center = gl.getAttribLocation(program, 'center');
+    gl.enableVertexAttribArray(center);
+    gl.vertexAttribPointer(center, 3, gl.FLOAT, false, 0, 0);
+    const output = gl.createBuffer();
+    gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, output);
+    gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER, 9 * 4, gl.DYNAMIC_READ);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, output);
+    gl.enable(gl.RASTERIZER_DISCARD);
+    gl.uniform4f(gl.getUniformLocation(program, 'uTestSeed'), 0.85, 0.1, 0.9, 0.5);
+
+    function sample(age, heading = 0, count = 1, tip = 0, fade = 1) {
+      const wake = new Float32Array(WAKE_COUNT * 4);
+      const data = new Float32Array(WAKE_COUNT * 2);
+      const lifetime = Math.max(0, Math.min(1, (age - 7.5) / (WAKE_LIFETIME - 7.5)));
+      const damping = fade * Math.exp(-0.1 * age) * (1 - lifetime * lifetime * (3 - 2 * lifetime));
+      for (let i = 0; i < count; i++) {
+        wake[4 * i + 2] = age;
+        wake[4 * i + 3] = Math.cos(heading);
+        data[2 * i] = Math.sin(heading);
+        data[2 * i + 1] = damping;
+      }
+      gl.uniform1i(gl.getUniformLocation(program, 'uWakeCount'), count);
+      gl.uniform4fv(gl.getUniformLocation(program, 'uWake[0]'), wake);
+      gl.uniform2fv(gl.getUniformLocation(program, 'uWakeData[0]'), data);
+      gl.uniform3f(gl.getUniformLocation(program, 'uTip'), 0, 0, tip);
+      gl.beginTransformFeedback(gl.POINTS);
+      gl.drawArrays(gl.POINTS, 0, 3);
+      gl.endTransformFeedback();
+      const values = new Float32Array(9);
+      gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER, 0, values);
+      return Array.from({ length: 3 }, (_, i) => Array.from(values.slice(i * 3, i * 3 + 3)));
+    }
+
+    function centers(values) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, input);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(values));
+    }
+
+    const early = sample(0.9);
+    const premature = sample(2.9);
+    const middle = sample(5.4);
+    const late = sample(8.5);
+    const almostSettled = sample(WAKE_LIFETIME - 0.01);
+    const settled = sample(WAKE_LIFETIME);
+    const overlap = sample(5.4, 0, WAKE_COUNT);
+    const faded = sample(5.4, 0, 1, 0, 0);
+    const passive = sample(0, 0, 0);
+    centers([0, 0.42, 0, 0, -0.42, 0, 0.12, 0.42, 0]);
+    const flanks = sample(5.4);
+    const reverse = sample(5.4, Math.PI);
+    centers([0.42, 0, 0, -0.42, 0, 0, 0, 0.12, 0]);
+    const turned = sample(5.4, Math.PI / 2);
+    gl.uniform1f(gl.getUniformLocation(program, 'uAspect'), 2);
+    centers([0.21, 0, 0, -0.21, 0, 0, 0, 0.12, 0]);
+    const aspect = sample(5.4, Math.PI / 2);
+    gl.uniform1f(gl.getUniformLocation(program, 'uAspect'), 1);
+    centers([0.004, 0, 0, 0.009, 0, 0, 0.02, 0, 0]);
+    const contact = sample(0, 0, 1, 1);
+    const magnitude = (v) => Math.hypot(...v);
+    const checks = {
+      'deep needlepoint contact': contact[0][2] > 0.09 && magnitude(contact[1]) < 0.000001 && magnitude(contact[2]) < 0.000001,
+      'delayed crest farther away': magnitude(middle[1]) > 0.02 && magnitude(middle[1]) > 10 * magnitude(early[1]),
+      'slower crest': magnitude(middle[1]) > 10 * magnitude(premature[1]),
+      'crest continues outward': magnitude(late[2]) > 0.01 && magnitude(late[2]) > 10 * magnitude(middle[2]),
+      'wave settles continuously at expiry': magnitude(almostSettled[1]) < 0.0001 * magnitude(middle[1]) && magnitude(settled[1]) === 0,
+      'retirement fade reaches zero': faded.flat().every((value) => value === 0),
+      'opposed wake flanks': flanks[0][1] > 0.01 && flanks[1][1] < -0.01,
+      'reverse leaves wake behind': magnitude(flanks[2]) < 0.000001 && magnitude(reverse[2]) > 0.0001,
+      'turn rotates wake': turned[0][0] > 0.01 && turned[1][0] < -0.01,
+      'depth displacement': Math.abs(middle[1][2]) > 0.1,
+      'aspect-correct distance': Math.abs(aspect[0][0] - turned[0][0]) < 0.00001,
+      'overlap remains bounded': magnitude(overlap[1]) < 0.5,
+      'passive scene unchanged': passive.flat().every((value) => value === 0),
+      'finite output': [early, middle, late, settled, overlap, contact, flanks, reverse, turned].flat(2).every(Number.isFinite),
+      'no WebGL errors': gl.getError() === gl.NO_ERROR,
+    };
+    const failures = Object.entries(checks).filter(([, passed]) => !passed).map(([name]) => name);
+    if (failures.length) throw new Error(`Failed: ${failures.join(', ')}`);
+    result.textContent = `PASS\n${Object.keys(checks).join('\n')}`;
+    result.dataset.status = 'pass';
+  } catch (error) {
+    result.textContent = `FAIL\n${error.stack || error.message}`;
+    result.dataset.status = 'fail';
+  }
+</script>
