@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1"
+    "preview": "vite preview --host 127.0.0.1",
+    "switcher": "npm --prefix switcher start",
+    "switcher:build": "npm --prefix switcher run build",
+    "switcher:test": "npm --prefix switcher test"
   },
   "dependencies": {
     "three": "0.187.0"

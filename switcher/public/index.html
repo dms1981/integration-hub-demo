@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Release Switcher</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #06070a;
+        color: #f3f5f8;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+
+      #release-frame {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        border: 0;
+        display: block;
+        background: #06070a;
+      }
+
+      .switcher-bar {
+        position: fixed;
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 20;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px;
+        border-radius: 999px;
+        background: rgba(12, 14, 20, 0.78);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        max-width: calc(100vw - 24px);
+      }
+
+      .release-buttons {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .release-btn {
+        appearance: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        background: transparent;
+        color: rgba(243, 245, 248, 0.72);
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 1;
+        padding: 8px 13px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 100ms ease;
+      }
+
+      .release-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #ffffff;
+      }
+
+      .release-btn:active {
+        transform: scale(0.98);
+      }
+
+      .release-btn:focus-visible {
+        outline: 2px solid #8ab4ff;
+        outline-offset: 2px;
+      }
+
+      .release-btn[aria-current="page"] {
+        background: rgba(255, 255, 255, 0.14);
+        border-color: rgba(255, 255, 255, 0.22);
+        color: #ffffff;
+        font-weight: 600;
+      }
+
+      .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #5ce1a6;
+        box-shadow: 0 0 8px rgba(92, 225, 166, 0.65);
+        flex-shrink: 0;
+      }
+
+      .release-tag {
+        color: rgba(243, 245, 248, 0.55);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 11px;
+        padding: 0 10px 0 6px;
+        border-left: 1px solid rgba(255, 255, 255, 0.12);
+        white-space: nowrap;
+      }
+
+      @media (max-width: 640px) {
+        .release-tag {
+          display: none;
+        }
+      }
+
+      .error-banner {
+        position: fixed;
+        inset: 0;
+        display: none;
+        place-items: center;
+        padding: 24px;
+        text-align: center;
+        color: #f8b4b4;
+        font-size: 14px;
+      }
+
+      .error-banner[data-visible="true"] {
+        display: grid;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="switcher-bar" aria-label="Release switcher">
+      <div class="release-buttons" id="release-buttons">
+        <span class="release-btn" aria-live="polite">Loading…</span>
+      </div>
+      <span class="release-tag" id="current-tag" hidden></span>
+    </nav>
+
+    <iframe
+      id="release-frame"
+      title="Active release preview"
+      allow="fullscreen"
+    ></iframe>
+
+    <div class="error-banner" id="error-banner" role="alert"></div>
+
+    <script type="module">
+      const frame = document.getElementById('release-frame');
+      const releaseButtons = document.getElementById('release-buttons');
+      const currentTag = document.getElementById('current-tag');
+      const errorBanner = document.getElementById('error-banner');
+
+      function showError(message) {
+        releaseButtons.textContent = 'Unavailable';
+        currentTag.hidden = true;
+        errorBanner.textContent = message;
+        errorBanner.dataset.visible = 'true';
+      }
+
+      async function init() {
+        const response = await fetch('./releases.json', { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`Failed to load releases.json (${response.status})`);
+        }
+
+        const manifest = await response.json();
+        const releases = Array.isArray(manifest.releases) ? manifest.releases : [];
+        if (releases.length === 0) {
+          throw new Error('No releases found in releases.json. Run "npm run build" in switcher/.');
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const requestedId = params.get('release');
+        const activeIndex = Math.max(
+          0,
+          releases.findIndex(
+            (release) => release.id === (requestedId || manifest.defaultRelease)
+          )
+        );
+        const active = releases[activeIndex];
+
+        document.title = `${active.label} (${active.tag}) — Release Switcher`;
+        currentTag.textContent = active.tag;
+        currentTag.hidden = false;
+
+        const iframeUrl = new URL(active.entry, window.location.href);
+        const pinnedTime = params.get('t');
+        if (pinnedTime !== null && pinnedTime !== '') {
+          iframeUrl.searchParams.set('t', pinnedTime);
+        }
+
+        frame.title = `${active.label} (${active.tag})`;
+        frame.src = iframeUrl.toString();
+
+        releaseButtons.replaceChildren(
+          ...releases.map((release) => {
+            const isActive = release.id === active.id;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'release-btn';
+            button.dataset.release = release.id;
+            button.title = isActive
+              ? `Reload ${release.label} (${release.tag})`
+              : `Switch to ${release.label} (${release.tag}) & reload`;
+
+            if (isActive) {
+              button.setAttribute('aria-current', 'page');
+              const dot = document.createElement('span');
+              dot.className = 'status-dot';
+              dot.setAttribute('aria-hidden', 'true');
+              button.append(dot);
+            }
+
+            button.append(document.createTextNode(release.label));
+            button.addEventListener('click', () => {
+              if (isActive) {
+                window.location.reload();
+                return;
+              }
+              const nextUrl = new URL(window.location.href);
+              nextUrl.searchParams.set('release', release.id);
+              window.location.assign(nextUrl.toString());
+            });
+
+            return button;
+          })
+        );
+      }
+
+      init().catch((error) => {
+        showError(error instanceof Error ? error.message : String(error));
+      });
+    </script>
+  </body>
+</html>
