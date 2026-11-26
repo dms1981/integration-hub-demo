@@ -70,7 +70,7 @@ afterEach(async () => {
 });
 
 describe('createManifest', () => {
-  it('builds a valid manifest with defaultRelease, commit metadata, and entry paths', () => {
+  it('builds a valid manifest with defaultRelease, commit metadata, and entry paths for all three releases', () => {
     const manifest = createManifest(
       [
         {
@@ -85,13 +85,19 @@ describe('createManifest', () => {
           label: 'Aftermatter',
           commit: 'abcdef1234567890abcdef1234567890abcdef12',
         },
+        {
+          id: 'gemini-4-neon-high',
+          tag: 'gemini-4-neon-high',
+          label: 'Gemini 4 Neon',
+          commit: 'ab91160bd7bb474c03805a6ac8a19942e0259c9f',
+        },
       ],
-      '2026-11-24T00:00:00.000Z'
+      '2026-11-26T00:00:00.000Z'
     );
 
     assert.equal(manifest.defaultRelease, 'opus-5.5-high');
-    assert.equal(manifest.generatedAt, '2026-11-24T00:00:00.000Z');
-    assert.equal(manifest.releases.length, 2);
+    assert.equal(manifest.generatedAt, '2026-11-26T00:00:00.000Z');
+    assert.equal(manifest.releases.length, 3);
     assert.deepEqual(manifest.releases[0], {
       id: 'opus-5.5-high',
       tag: 'opus-5.5-high',
@@ -102,6 +108,14 @@ describe('createManifest', () => {
     });
     assert.equal(manifest.releases[1].entry, './releases/6.2-Sol-High/index.html');
     assert.equal(manifest.releases[1].shortCommit, 'abcdef1');
+    assert.deepEqual(manifest.releases[2], {
+      id: 'gemini-4-neon-high',
+      tag: 'gemini-4-neon-high',
+      label: 'Gemini 4 Neon',
+      commit: 'ab91160bd7bb474c03805a6ac8a19942e0259c9f',
+      shortCommit: 'ab91160',
+      entry: './releases/gemini-4-neon-high/index.html',
+    });
   });
 
   it('rejects an empty release list', () => {

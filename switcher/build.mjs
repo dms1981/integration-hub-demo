@@ -23,6 +23,11 @@ export const RELEASES = [
     tag: '6.2-Sol-High',
     label: 'Aftermatter',
   },
+  {
+    id: 'gemini-4-neon-high',
+    tag: 'gemini-4-neon-high',
+    label: 'Gemini 4 Neon',
+  },
 ];
 
 export function resolveTagCommit(tag, repoRoot = REPO_ROOT) {
