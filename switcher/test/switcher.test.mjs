@@ -88,8 +88,8 @@ describe('createManifest', () => {
         {
           id: 'gemini-4-neon-high',
           tag: 'gemini-4-neon-high',
-          label: 'Gemini 4 Neon',
-          commit: 'ab91160bd7bb474c03805a6ac8a19942e0259c9f',
+          label: 'Solaris',
+          commit: '55b724ea292dee2648d3ce54b6ad7901c16d25db',
         },
       ],
       '2026-11-26T00:00:00.000Z'
@@ -111,9 +111,9 @@ describe('createManifest', () => {
     assert.deepEqual(manifest.releases[2], {
       id: 'gemini-4-neon-high',
       tag: 'gemini-4-neon-high',
-      label: 'Gemini 4 Neon',
-      commit: 'ab91160bd7bb474c03805a6ac8a19942e0259c9f',
-      shortCommit: 'ab91160',
+      label: 'Solaris',
+      commit: '55b724ea292dee2648d3ce54b6ad7901c16d25db',
+      shortCommit: '55b724e',
       entry: './releases/gemini-4-neon-high/index.html',
     });
   });

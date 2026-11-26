@@ -4,7 +4,7 @@ A minimal localhost frontend for switching between the three tagged releases wit
 
 - **`opus-5.5-high`** — Cascade
 - **`6.2-Sol-High`** — Aftermatter
-- **`gemini-4-neon-high`** — Gemini 4 Neon
+- **`gemini-4-neon-high`** — Solaris
 
 ## Quick start
 

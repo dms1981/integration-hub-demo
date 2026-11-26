@@ -26,7 +26,7 @@ export const RELEASES = [
   {
     id: 'gemini-4-neon-high',
     tag: 'gemini-4-neon-high',
-    label: 'Gemini 4 Neon',
+    label: 'Solaris',
   },
 ];
 
