@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createSculptureGeometry } from './geometry';
 import { PALETTES, type PaletteColors } from './palettes';
+import { MAX_SHATTERS, type ShatterUniformPayload } from './shatter';
 import sculptureVert from './shaders/sculpture.vert.glsl?raw';
 import sculptureFrag from './shaders/sculpture.frag.glsl?raw';
 
@@ -16,6 +17,10 @@ interface SculptureUniforms {
   uColHighlight: THREE.IUniform<THREE.Color>;
   uBgColor: THREE.IUniform<THREE.Color>;
   uCorePulse: THREE.IUniform<number>;
+  uShatterOrigin: THREE.IUniform<THREE.Vector3[]>;
+  uShatterAge: THREE.IUniform<Float32Array>;
+  uShatterSeed: THREE.IUniform<Float32Array>;
+  uShatterStrength: THREE.IUniform<Float32Array>;
 }
 
 export class KineticSculpture {
@@ -39,6 +44,12 @@ export class KineticSculpture {
       uColHighlight: { value: initialPalette.highlight.clone() },
       uBgColor: { value: initialPalette.bgTint.clone() },
       uCorePulse: { value: 0.15 },
+      uShatterOrigin: {
+        value: Array.from({ length: MAX_SHATTERS }, () => new THREE.Vector3(0, 1.0, 0)),
+      },
+      uShatterAge: { value: new Float32Array(MAX_SHATTERS).fill(-1) },
+      uShatterSeed: { value: new Float32Array(MAX_SHATTERS) },
+      uShatterStrength: { value: new Float32Array(MAX_SHATTERS) },
     };
 
     this.material = new THREE.ShaderMaterial({
@@ -63,6 +74,7 @@ export class KineticSculpture {
     morph: number,
     palette: PaletteColors,
     corePulse: number,
+    shatterPayload?: ShatterUniformPayload,
   ): void {
     this.uniforms.uTime.value = time;
     this.uniforms.uFromFormation.value = fromIdx;
@@ -74,6 +86,20 @@ export class KineticSculpture {
     this.uniforms.uColHighlight.value.copy(palette.highlight);
     this.uniforms.uBgColor.value.copy(palette.bgTint);
     this.uniforms.uCorePulse.value = corePulse;
+
+    if (shatterPayload) {
+      const origins = this.uniforms.uShatterOrigin.value;
+      const ages = this.uniforms.uShatterAge.value;
+      const seeds = this.uniforms.uShatterSeed.value;
+      const strengths = this.uniforms.uShatterStrength.value;
+
+      for (let i = 0; i < MAX_SHATTERS; i++) {
+        origins[i].copy(shatterPayload.origins[i]);
+        ages[i] = shatterPayload.ages[i];
+        seeds[i] = shatterPayload.seeds[i];
+        strengths[i] = shatterPayload.strengths[i];
+      }
+    }
   }
 
   public dispose(): void {

@@ -78,6 +78,8 @@ uniform vec3 uColPrimary;
 uniform vec3 uColSecondary;
 uniform vec3 uColHighlight;
 uniform float uCorePulse;
+uniform vec3 uShatterOrigin;
+uniform float uShatterAge;
 
 varying vec3 vWorldPos;
 varying vec2 vPlanePos;
@@ -127,7 +129,18 @@ void main() {
   float archRing = smoothstep(0.96, 1.0, sin(r * 1.25)) * 0.025 * poolWide * smoothstep(2.4, 7.0, r);
   vec3 ringAccent = mix(uColPrimary, uColHighlight, 0.35) * archRing;
 
-  vec3 col = obsidianBase + reflectionPool + grazingSheen + ringAccent;
+  vec3 shatterRipple = vec3(0.0);
+  if (uShatterAge >= 0.0 && uShatterAge < 2.4) {
+    float dImpact = length(vWorldPos.xz - uShatterOrigin.xz);
+    float ringR = uShatterAge * 14.0;
+    float ringWidth = 1.6 + uShatterAge * 1.1;
+    float ringWave = exp(-pow((dImpact - ringR) / ringWidth, 2.0));
+    float ringFade = smoothstep(0.0, 0.05, uShatterAge) * exp(-uShatterAge * 1.30);
+    vec3 rippleCol = mix(uColPrimary, uColHighlight, 0.52);
+    shatterRipple = rippleCol * ringWave * ringFade * 0.42 * edgeFade;
+  }
+
+  vec3 col = obsidianBase + reflectionPool + grazingSheen + ringAccent + shatterRipple;
   float alpha = edgeFade * (0.94 - 0.14 * (1.0 - poolWide));
 
   gl_FragColor = vec4(col, alpha);
@@ -287,6 +300,8 @@ export class StageEnvironment {
         uColSecondary: { value: initialPalette.secondary.clone() },
         uColHighlight: { value: initialPalette.highlight.clone() },
         uCorePulse: { value: 0.15 },
+        uShatterOrigin: { value: new THREE.Vector3(0, 1.0, 0) },
+        uShatterAge: { value: -1 },
       },
       transparent: true,
       depthWrite: false,
@@ -348,7 +363,13 @@ export class StageEnvironment {
     this.group.add(dustPoints);
   }
 
-  public update(time: number, palette: PaletteColors, corePulse: number): void {
+  public update(
+    time: number,
+    palette: PaletteColors,
+    corePulse: number,
+    shatterOrigin?: THREE.Vector3,
+    shatterAge = -1,
+  ): void {
     this.skyMat.uniforms.uBgTint.value.copy(palette.bgTint);
     this.skyMat.uniforms.uColPrimary.value.copy(palette.primary);
     this.skyMat.uniforms.uColSecondary.value.copy(palette.secondary);
@@ -360,6 +381,10 @@ export class StageEnvironment {
     this.floorMat.uniforms.uColSecondary.value.copy(palette.secondary);
     this.floorMat.uniforms.uColHighlight.value.copy(palette.highlight);
     this.floorMat.uniforms.uCorePulse.value = corePulse;
+    if (shatterOrigin) {
+      this.floorMat.uniforms.uShatterOrigin.value.copy(shatterOrigin);
+    }
+    this.floorMat.uniforms.uShatterAge.value = shatterAge;
 
     this.auraMat.uniforms.uTime.value = time;
     this.auraMat.uniforms.uColPrimary.value.copy(palette.primary);

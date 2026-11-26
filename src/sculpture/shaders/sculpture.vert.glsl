@@ -11,6 +11,10 @@ uniform vec3 uColShadow;
 uniform vec3 uColPrimary;
 uniform vec3 uColSecondary;
 uniform vec3 uColHighlight;
+uniform vec3 uShatterOrigin[3];
+uniform float uShatterAge[3];
+uniform float uShatterSeed[3];
+uniform float uShatterStrength[3];
 
 varying vec3 vWorldPos;
 varying vec3 vWorldNormal;
@@ -59,6 +63,18 @@ mat3 rotateZ(float a) {
       c,  -s, 0.0,
       s,   c, 0.0,
     0.0, 0.0, 1.0
+  );
+}
+
+mat3 rotateAxis(vec3 axis, float angle) {
+  vec3 a = safeNormalize(axis, vec3(0.0, 1.0, 0.0));
+  float s = sin(angle);
+  float c = cos(angle);
+  float oc = 1.0 - c;
+  return mat3(
+    oc * a.x * a.x + c,       oc * a.x * a.y - a.z * s, oc * a.z * a.x + a.y * s,
+    oc * a.x * a.y + a.z * s, oc * a.y * a.y + c,       oc * a.y * a.z - a.x * s,
+    oc * a.z * a.x - a.y * s, oc * a.y * a.z + a.x * s, oc * a.z * a.z + c
   );
 }
 
@@ -550,8 +566,93 @@ void main() {
   // Float sculpture gracefully above the obsidian gallery floor
   finalPos.y += 1.0;
 
+  vec3 totalShatterDisp = vec3(0.0);
+  mat3 shatterRot = mat3(1.0);
+  float totalShockGlow = 0.0;
+  float totalShockRing = 0.0;
+  float totalShatterEnv = 0.0;
+
+  for (int i = 0; i < 3; i++) {
+    float age = uShatterAge[i];
+    float strength = uShatterStrength[i];
+    if (age >= 0.0 && age < 3.5 && strength > 0.001) {
+      vec3 toCube = finalPos - uShatterOrigin[i];
+      float dist = length(toCube);
+      vec3 fallbackDir = safeNormalize(aSeed.xyz - 0.5, vec3(0.0, 1.0, 0.0));
+      vec3 radialDir = safeNormalize(toCube, fallbackDir);
+
+      // Fast spherical shockfront radiating outward from the exact click impact point
+      float waveDelay = dist * 0.030 + aSeed.w * 0.065;
+      float localAge = age - waveDelay;
+      float localDur = 2.65 + 0.55 * aSeed.y;
+
+      if (localAge > 0.0 && localAge < localDur) {
+        float u = clamp(localAge / localDur, 0.0, 1.0);
+
+        // Explosive crystalline burst -> zero-G hang -> C2-smooth magnetic reformation
+        float rise = smoothstep(0.0, 0.22, u);
+        float launch = 1.0 - pow(max(1.0 - rise, 0.0001), 2.6);
+        float reform = pow(max(1.0 - smoothstep(0.24, 1.0, u), 0.0001), 2.35);
+        float env = launch * reform;
+
+        float prox = 1.0 / (1.0 + dist * 0.085);
+        float blastDist = mix(2.6, 8.6, prox) * (0.62 + 0.76 * aSeed.x) * strength;
+
+        float sSeed = uShatterSeed[i];
+        vec3 jitter = safeNormalize(
+          sin(aSeed.xyz * 19.7 + vec3(sSeed * 7.3, sSeed * 11.1, sSeed * 5.9)),
+          vec3(0.0, 1.0, 0.0)
+        );
+        vec3 tangentSwirl = safeNormalize(
+          cross(radialDir, vec3(0.0, 1.0, 0.25)),
+          vec3(1.0, 0.0, 0.0)
+        );
+        float swirlArc = sin(u * PI) * (1.0 + 1.65 * prox) * (aSeed.z - 0.5) * 2.0;
+        vec3 curlDrift = curlField(
+          finalPos * 0.16 + uShatterOrigin[i] * 0.08,
+          uTime * 0.75 + sSeed
+        ) * (1.9 * sin(u * PI) * strength);
+
+        vec3 disp = (radialDir + jitter * 0.42) * (blastDist * env)
+          + tangentSwirl * (swirlArc * env)
+          + curlDrift * env;
+        disp.y += (0.95 * sin(u * PI) - 0.55 * u * env) * strength;
+        totalShatterDisp += disp;
+
+        vec3 tumbleAxis = safeNormalize(cross(radialDir, jitter), vec3(0.0, 1.0, 0.0));
+        float tumbleAngle = env * (5.2 + 9.2 * aSeed.z) * (0.65 + 0.75 * prox) * strength;
+        shatterRot = rotateAxis(tumbleAxis, tumbleAngle) * shatterRot;
+
+        // Sharp luminous shockwave ring racing across the cubes + crystalline shard embers
+        float shockRing = exp(-pow((localAge - 0.065) / 0.11, 2.0))
+          * smoothstep(0.0, 0.025, localAge)
+          * strength;
+        float emberMask = smoothstep(0.42, 0.96, aSeed.x);
+        totalShockGlow += shockRing * (0.76 + 0.48 * prox)
+          + env * (0.14 + 0.54 * emberMask * (0.5 + 0.5 * prox)) * strength;
+        totalShockRing += shockRing;
+        totalShatterEnv += env * strength;
+      }
+    }
+  }
+
+  // Soft-compress combined displacement so overlapping multi-clicks stay framed & sculptural
+  float dispLen = length(totalShatterDisp);
+  if (dispLen > 0.0001) {
+    float compressed = dispLen / (1.0 + dispLen / 16.0);
+    finalPos += totalShatterDisp * (compressed / dispLen);
+    // Keep flying shards smoothly above the obsidian gallery floor (y = -13.2)
+    finalPos.y = max(finalPos.y, -12.2 + 0.4 * sin(aSeed.x * TAU));
+  }
+
+  float clampedRing = clamp(totalShockRing, 0.0, 1.0);
+  float clampedEnv = clamp(totalShatterEnv, 0.0, 1.0);
+  finalScale *= (1.0 + 0.18 * clampedRing - 0.12 * clampedEnv);
+  finalColorParam = clamp(finalColorParam + clamp(clampedRing * 0.34 + clampedEnv * 0.12, 0.0, 0.44), 0.0, 1.0);
+  finalEnergy = min(finalEnergy + clamp(totalShockGlow, 0.0, 1.22), 1.65);
+
   float axialRoll = aSeed.z * TAU + uTime * (0.28 + 0.35 * aSeed.y) + cascadeArc * 2.4;
-  mat3 cubeBasis = basisFromDir(finalDir, axialRoll);
+  mat3 cubeBasis = shatterRot * basisFromDir(finalDir, axialRoll);
 
   vec3 localVertex = cubeBasis * (position * vec3(finalScale));
   vec3 displacedPos = finalPos + localVertex;

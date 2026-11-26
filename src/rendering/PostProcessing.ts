@@ -151,6 +151,10 @@ export class PostProcessing {
     this.bloomPass.strength = v;
   }
 
+  public setChromaticAberration(v: number): void {
+    this.gradePass.uniforms.uChromaticAberration.value = v;
+  }
+
   public dispose(): void {
     this.renderPass.dispose();
     this.bloomPass.dispose();

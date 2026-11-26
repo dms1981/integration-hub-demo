@@ -31,12 +31,14 @@ export class CameraRig {
 
   private isDragging = false;
   private userOverride = false;
+  private wasAlreadyOverriding = false;
   private manualLock = false;
   private idleTimer = 0;
 
   private readonly tempOffset = new THREE.Vector3();
 
   private readonly onControlsStart = (): void => {
+    this.wasAlreadyOverriding = this.userOverride;
     this.isDragging = true;
     this.userOverride = true;
     this.manualLock = false;
@@ -157,6 +159,7 @@ export class CameraRig {
   ): void {
     this.manualLock = true;
     this.userOverride = false;
+    this.wasAlreadyOverriding = false;
     this.isDragging = false;
     this.idleTimer = 0;
 
@@ -205,9 +208,18 @@ export class CameraRig {
     );
   }
 
+  public cancelClickOverride(): void {
+    if (!this.wasAlreadyOverriding) {
+      this.userOverride = false;
+      this.isDragging = false;
+      this.idleTimer = 0;
+    }
+  }
+
   public resumeAuto(): void {
     this.manualLock = false;
     this.userOverride = false;
+    this.wasAlreadyOverriding = false;
     this.isDragging = false;
     this.idleTimer = 0;
     this.syncFromCamera();
